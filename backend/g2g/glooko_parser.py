@@ -16,7 +16,7 @@ def parse_timestamp(value: Any, zone: ZoneInfo | None = None) -> datetime | None
     """
     if value is None:
         return None
-    zone = zone or ZoneInfo("UTC")
+    zone = zone or ZoneInfo("America/Los_Angeles")
 
     if isinstance(value, (int, float)):
         epoch = float(value)

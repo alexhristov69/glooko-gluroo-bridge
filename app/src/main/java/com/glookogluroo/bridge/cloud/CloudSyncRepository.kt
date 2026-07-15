@@ -18,23 +18,29 @@ class CloudSyncRepository @Inject constructor(
     private val settingsRepository: SettingsRepository,
 ) {
     suspend fun saveSettings(settings: AppSettings) {
+        val withZone = settings.copy(
+            timezone = settings.timezone.ifBlank {
+                java.time.ZoneId.systemDefault().id
+            },
+        )
         api.putSettings(
             buildJsonObject {
-                put("glookoEmail", settings.glookoEmail)
-                put("glookoPassword", settings.glookoPassword)
-                put("nightscoutUrl", settings.nightscoutUrl)
-                put("nightscoutSecret", settings.nightscoutSecret)
-                put("useTokenAuth", settings.useTokenAuth)
-                put("syncEnabled", settings.syncEnabled)
-                put("backfillDays", settings.backfillDays)
-                put("syncFromOverride", settings.syncFromOverride)
-                put("postPumpModeNotes", settings.postPumpModeNotes)
-                put("jitterInsulinTimestamps", settings.jitterInsulinTimestamps)
-                put("syncIntervalMinutes", settings.syncIntervalMinutes.coerceAtLeast(5))
+                put("glookoEmail", withZone.glookoEmail)
+                put("glookoPassword", withZone.glookoPassword)
+                put("nightscoutUrl", withZone.nightscoutUrl)
+                put("nightscoutSecret", withZone.nightscoutSecret)
+                put("useTokenAuth", withZone.useTokenAuth)
+                put("syncEnabled", withZone.syncEnabled)
+                put("backfillDays", withZone.backfillDays)
+                put("syncFromOverride", withZone.syncFromOverride)
+                put("postPumpModeNotes", withZone.postPumpModeNotes)
+                put("jitterInsulinTimestamps", withZone.jitterInsulinTimestamps)
+                put("syncIntervalMinutes", withZone.syncIntervalMinutes.coerceAtLeast(1))
+                put("timezone", withZone.timezone)
             },
         )
         // Keep non-secret settings locally for UI; secrets stay for edit-in-place
-        settingsRepository.saveSettings(settings)
+        settingsRepository.saveSettings(withZone)
     }
 
     suspend fun getSyncState(): SyncState {
@@ -62,6 +68,9 @@ class CloudSyncRepository @Inject constructor(
             postPumpModeNotes = bridge.bool("postPumpModeNotes", local.postPumpModeNotes),
             jitterInsulinTimestamps = bridge.bool("jitterInsulinTimestamps", local.jitterInsulinTimestamps),
             syncIntervalMinutes = bridge.int("syncIntervalMinutes", local.syncIntervalMinutes),
+            timezone = bridge.string("timezone", local.timezone).ifBlank {
+                java.time.ZoneId.systemDefault().id
+            },
         )
     }
 

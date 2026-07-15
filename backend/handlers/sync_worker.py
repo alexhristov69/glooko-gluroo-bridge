@@ -91,15 +91,9 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
             syncPreview=_preview_to_dict(result.sync_preview),
         )
 
-        # Keep next scheduled sync consistent after manual sync
-        if result.success and settings.sync_enabled:
-            interval = max(5, settings.sync_interval_minutes)
-            next_ms = int(datetime.now(timezone.utc).timestamp() * 1000) + interval * 60_000
-            store._tables()["bridges"].update_item(
-                Key={"bridgeId": bridge_id},
-                UpdateExpression="SET nextScheduledSyncEpochMs=:n",
-                ExpressionAttributeValues={":n": next_ms},
-            )
+        # Do not touch nextScheduledSyncEpochMs here. Scheduler claims it before
+        # start; API advances it for manual Sync now. Rewriting on completion
+        # pushed the cursor past the next EventBridge tick (interval+1).
 
         return {
             "bridgeId": bridge_id,

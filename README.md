@@ -69,7 +69,7 @@ Add yourself to the Cognito group `g2g-admins` for circuit-breaker override/rese
 ### Cost guardrails
 
 - One active run per bridge; 200 runs/day/bridge; 20 tests/hour/bridge
-- Scheduler fan-out max 50/tick; min interval 5 minutes
+- Scheduler fan-out max 50/tick; min interval 1 minute
 - Circuit breaker trips on Lambda >2k/h, SFN >1k/h, or >3k global runs/day
 - **24h override:** `POST /admin/circuit-breaker/override` (admin)
 - **Full reset:** `POST /admin/circuit-breaker/reset` (admin)

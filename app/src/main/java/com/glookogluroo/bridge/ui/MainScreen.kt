@@ -249,7 +249,7 @@ fun MainScreen(viewModel: MainViewModel) {
                         label = {
                             Text(
                                 if (uiState.cloudEnabled) {
-                                    "Sync interval (minutes, min 5)"
+                                    "Sync interval (minutes, min 1)"
                                 } else {
                                     "Sync interval (minutes, min 1)"
                                 },

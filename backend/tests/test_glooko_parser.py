@@ -13,6 +13,11 @@ def test_parse_timestamp_treats_glooko_z_as_local_wall_clock():
     assert instant == datetime.fromisoformat("2026-07-06T22:00:00+00:00")
 
 
+def test_parse_timestamp_defaults_to_pacific_not_utc():
+    instant = parse_timestamp("2026-07-06T15:00:00.000Z")
+    assert instant == datetime.fromisoformat("2026-07-06T22:00:00+00:00")
+
+
 def test_parse_bolus_entries_extracts_delivered_boluses():
     graph_data = {
         "series": {

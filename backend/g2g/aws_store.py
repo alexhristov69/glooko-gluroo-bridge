@@ -101,7 +101,7 @@ def upsert_bridge_settings(bridge_id: str, body: dict[str, Any]) -> dict[str, An
     tables = _tables()
     existing = get_bridge(bridge_id) or {"bridgeId": bridge_id}
     interval = int(body.get("syncIntervalMinutes", existing.get("syncIntervalMinutes", 15)))
-    interval = max(5, min(240, interval))
+    interval = max(1, min(240, interval))
     backfill = int(body.get("backfillDays", existing.get("backfillDays", 7)))
     backfill = max(1, min(30, backfill))
     sync_enabled = bool(body.get("syncEnabled", existing.get("syncEnabled", False)))
@@ -125,6 +125,12 @@ def upsert_bridge_settings(bridge_id: str, body: dict[str, Any]) -> dict[str, An
             body.get("jitterInsulinTimestamps", existing.get("jitterInsulinTimestamps", False))
         ),
         "syncIntervalMinutes": interval,
+        "timezone": (
+            body.get("timezone")
+            or existing.get("timezone")
+            or "America/Los_Angeles"
+        ).strip()
+        or "America/Los_Angeles",
         "updatedAt": datetime.now(timezone.utc).isoformat(),
     }
     if sync_enabled and not existing.get("nextScheduledSyncEpochMs"):
@@ -148,6 +154,8 @@ def bridge_to_settings(item: dict[str, Any], creds: dict[str, str]) -> AppSettin
         post_pump_mode_notes=bool(item.get("postPumpModeNotes", True)),
         jitter_insulin_timestamps=bool(item.get("jitterInsulinTimestamps", False)),
         sync_interval_minutes=int(item.get("syncIntervalMinutes", 15)),
+        timezone=(item.get("timezone") or "America/Los_Angeles").strip()
+        or "America/Los_Angeles",
     )
 
 
@@ -162,14 +170,14 @@ def bridge_to_sync_state(item: dict[str, Any]) -> SyncState:
 
 
 def update_bridge_sync_state(bridge_id: str, state: SyncState) -> None:
+    # Do not write nextScheduledSyncEpochMs here — scheduler/API own that cursor.
+    # SyncEngine upserts would otherwise race and stomp a just-claimed schedule.
     tables = _tables()
     expr = (
-        "SET lastSuccessfulSyncEpochMs=:a, nextScheduledSyncEpochMs=:b, "
-        "lastError=:d, lastBolusesUploaded=:e"
+        "SET lastSuccessfulSyncEpochMs=:a, lastError=:d, lastBolusesUploaded=:e"
     )
     values: dict[str, Any] = {
         ":a": state.last_successful_sync_epoch_ms,
-        ":b": state.next_scheduled_sync_epoch_ms,
         ":d": state.last_error or "",
         ":e": state.last_boluses_uploaded,
     }
@@ -347,6 +355,14 @@ def list_due_bridges(now_ms: int, limit: int = 50) -> list[dict[str, Any]]:
         Limit=limit,
     )
     return resp.get("Items", [])
+
+
+def set_next_scheduled(bridge_id: str, next_ms: int) -> None:
+    _tables()["bridges"].update_item(
+        Key={"bridgeId": bridge_id},
+        UpdateExpression="SET nextScheduledSyncEpochMs=:n",
+        ExpressionAttributeValues={":n": int(next_ms)},
+    )
 
 
 def claim_bridge_schedule(bridge_id: str, expected_next: int, new_next: int) -> bool:

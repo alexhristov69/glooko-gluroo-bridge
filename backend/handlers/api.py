@@ -17,7 +17,7 @@ from handlers.http_util import bridge_id_from_event, is_admin, parse_body, respo
 
 MAX_RUNS_PER_DAY = 200
 MAX_TEST_RUNS_PER_HOUR = 20
-MIN_SYNC_INTERVAL = 5
+MIN_SYNC_INTERVAL = 1
 
 
 def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
@@ -116,6 +116,15 @@ def post_run(bridge_id: str, body: dict[str, Any]) -> dict[str, Any]:
     if not bridge:
         return response(400, {"error": "Settings not saved yet"})
 
+    # Manual sync: advance schedule here so scheduler does not immediately re-fire.
+    # Align to UTC minute boundaries (same as scheduler) so EventBridge does not skip.
+    if mode == "sync" and bridge.get("syncEnabled"):
+        interval = max(MIN_SYNC_INTERVAL, int(bridge.get("syncIntervalMinutes") or 15))
+        now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+        minute_ms = 60_000
+        aligned_now = (now_ms // minute_ms) * minute_ms
+        store.set_next_scheduled(bridge_id, aligned_now + interval * minute_ms)
+
     run = store.create_run(bridge_id, mode)
     sfn = boto3.client("stepfunctions")
     execution = sfn.start_execution(
@@ -181,6 +190,7 @@ def get_status(bridge_id: str) -> dict[str, Any]:
                 "postPumpModeNotes": bridge.get("postPumpModeNotes", True),
                 "jitterInsulinTimestamps": bridge.get("jitterInsulinTimestamps", False),
                 "syncIntervalMinutes": bridge.get("syncIntervalMinutes", 15),
+                "timezone": bridge.get("timezone") or "America/Los_Angeles",
             },
             "currentRun": current,
             "lastRun": last,

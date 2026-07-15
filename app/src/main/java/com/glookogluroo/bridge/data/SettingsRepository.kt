@@ -19,6 +19,8 @@ data class AppSettings(
     val postPumpModeNotes: Boolean = true,
     val jitterInsulinTimestamps: Boolean = false,
     val syncIntervalMinutes: Int = 15,
+    /** IANA timezone used for Glooko local-wall-clock timestamps (e.g. America/Los_Angeles). */
+    val timezone: String = java.time.ZoneId.systemDefault().id,
 )
 
 @Singleton
@@ -50,6 +52,8 @@ class SettingsRepository @Inject constructor(
             postPumpModeNotes = prefs.getBoolean(KEY_POST_PUMP_MODE_NOTES, true),
             jitterInsulinTimestamps = prefs.getBoolean(KEY_JITTER_INSULIN_TIMESTAMPS, false),
             syncIntervalMinutes = prefs.getInt(KEY_SYNC_INTERVAL_MINUTES, 15),
+            timezone = prefs.getString(KEY_TIMEZONE, null)
+                ?: java.time.ZoneId.systemDefault().id,
         )
     }
 
@@ -66,6 +70,10 @@ class SettingsRepository @Inject constructor(
             .putBoolean(KEY_POST_PUMP_MODE_NOTES, settings.postPumpModeNotes)
             .putBoolean(KEY_JITTER_INSULIN_TIMESTAMPS, settings.jitterInsulinTimestamps)
             .putInt(KEY_SYNC_INTERVAL_MINUTES, settings.syncIntervalMinutes.coerceIn(1, 240))
+            .putString(
+                KEY_TIMEZONE,
+                settings.timezone.ifBlank { java.time.ZoneId.systemDefault().id },
+            )
             .apply()
     }
 
@@ -90,5 +98,6 @@ class SettingsRepository @Inject constructor(
         private const val KEY_POST_PUMP_MODE_NOTES = "post_pump_mode_notes"
         private const val KEY_JITTER_INSULIN_TIMESTAMPS = "jitter_insulin_timestamps"
         private const val KEY_SYNC_INTERVAL_MINUTES = "sync_interval_minutes"
+        private const val KEY_TIMEZONE = "timezone"
     }
 }

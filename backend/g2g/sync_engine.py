@@ -97,7 +97,14 @@ class SyncEngine:
     ):
         self.dedupe = dedupe
         self.state = state
-        self.zone = zone or ZoneInfo("UTC")
+        self.zone = zone or ZoneInfo("America/Los_Angeles")
+
+    def _zone_for(self, settings: AppSettings) -> ZoneInfo:
+        name = (settings.timezone or "").strip() or "America/Los_Angeles"
+        try:
+            return ZoneInfo(name)
+        except Exception:
+            return ZoneInfo("America/Los_Angeles")
 
     def build_sync_preview(
         self,
@@ -106,7 +113,8 @@ class SyncEngine:
     ) -> SyncPreview:
         now = datetime.now(timezone.utc)
         existing = self.state.get()
-        window = sync_window_mod.resolve(settings, existing, now, self.zone)
+        zone = self._zone_for(settings)
+        window = sync_window_mod.resolve(settings, existing, now, zone)
         client = glooko_client or GlookoClient(settings.glooko_email, settings.glooko_password)
 
         graph = client.get_graph_data(window.start, now)
@@ -115,9 +123,9 @@ class SyncEngine:
         stats = client.get_statistics(window.start, now)
         device_data = client.get_device_settings()
 
-        boluses = parse_bolus_entries(graph, self.zone)
+        boluses = parse_bolus_entries(graph, zone)
         pump_stats = parse_pump_mode(stats) if stats else None
-        devices = parse_devices(device_data, self.zone) if device_data else []
+        devices = parse_devices(device_data, zone) if device_data else []
 
         known = self.dedupe.get_all_keys()
         new_bolus_treatments: list[NightscoutTreatment] = []

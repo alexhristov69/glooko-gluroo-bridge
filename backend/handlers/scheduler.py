@@ -13,6 +13,14 @@ from g2g.allow_sync import is_sync_allowed
 from g2g import aws_store as store
 
 FANOUT_CAP = 50
+MINUTE_MS = 60_000
+
+
+def _aligned_next(now_ms: int, interval_minutes: int) -> int:
+    """Next fire on a UTC minute boundary so rate(1 minute) ticks do not skip a slot."""
+    interval = max(1, interval_minutes)
+    aligned_now = (now_ms // MINUTE_MS) * MINUTE_MS
+    return aligned_now + interval * MINUTE_MS
 
 
 def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
@@ -32,9 +40,11 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         if store.has_active_run(bridge_id):
             skipped += 1
             continue
-        interval = max(5, int(bridge.get("syncIntervalMinutes") or 15))
+        interval = max(1, int(bridge.get("syncIntervalMinutes") or 15))
         expected_next = int(bridge.get("nextScheduledSyncEpochMs") or 0)
-        new_next = now_ms + interval * 60_000
+        # Align to minute boundaries. Plain now+interval often lands a few seconds
+        # after the next EventBridge tick, which skips a minute (interval+1).
+        new_next = _aligned_next(now_ms, interval)
         if not store.claim_bridge_schedule(bridge_id, expected_next, new_next):
             skipped += 1
             continue

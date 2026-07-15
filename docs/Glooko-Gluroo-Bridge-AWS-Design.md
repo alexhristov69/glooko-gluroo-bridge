@@ -219,7 +219,7 @@ The app polls `GET /runs/{runId}` every 2 seconds after Test or Sync Now (same U
 | `nightscoutUrl` | String | Non-secret |
 | `useTokenAuth` | Boolean | |
 | `syncEnabled` | Boolean | Per-bridge toggle |
-| `syncIntervalMinutes` | Number | Server-enforced minimum 5 |
+| `syncIntervalMinutes` | Number | Server-enforced minimum 1 |
 | `backfillDays` | Number | 1–30 |
 | `syncFromOverride` | String | Optional `yyyy-MM-dd HH:mm` |
 | `postPumpModeNotes` | Boolean | |

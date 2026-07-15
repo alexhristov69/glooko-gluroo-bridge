@@ -13,7 +13,7 @@ LOCAL_INPUT_FMT = "%Y-%m-%d %H:%M"
 def parse_custom_start(value: str, zone: ZoneInfo | None = None) -> datetime | None:
     if not value or not value.strip():
         return None
-    zone = zone or ZoneInfo("UTC")
+    zone = zone or ZoneInfo("America/Los_Angeles")
     try:
         naive = datetime.strptime(value.strip(), LOCAL_INPUT_FMT)
         return naive.replace(tzinfo=zone).astimezone(timezone.utc)
@@ -22,7 +22,7 @@ def parse_custom_start(value: str, zone: ZoneInfo | None = None) -> datetime | N
 
 
 def format_local(instant: datetime, zone: ZoneInfo | None = None) -> str:
-    zone = zone or ZoneInfo("UTC")
+    zone = zone or ZoneInfo("America/Los_Angeles")
     return instant.astimezone(zone).strftime(LOCAL_INPUT_FMT)
 
 
@@ -37,7 +37,7 @@ def resolve(
     zone: ZoneInfo | None = None,
 ) -> SyncWindow:
     now = now or datetime.now(timezone.utc)
-    zone = zone or ZoneInfo("UTC")
+    zone = zone or ZoneInfo("America/Los_Angeles")
 
     custom = parse_custom_start(settings.sync_from_override, zone)
     if custom is not None:

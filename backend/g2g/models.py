@@ -93,6 +93,8 @@ class AppSettings:
     post_pump_mode_notes: bool = True
     jitter_insulin_timestamps: bool = False
     sync_interval_minutes: int = 15
+    # IANA zone for Glooko Z-suffix local wall-clock timestamps (Lambda has no device TZ)
+    timezone: str = "America/Los_Angeles"
 
 
 @dataclass
