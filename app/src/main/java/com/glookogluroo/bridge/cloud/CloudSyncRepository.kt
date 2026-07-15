@@ -7,6 +7,8 @@ import com.glookogluroo.bridge.sync.SyncPreview
 import com.glookogluroo.bridge.sync.SyncResult
 import com.glookogluroo.bridge.sync.db.SyncState
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import java.time.Instant
 import javax.inject.Inject
@@ -130,6 +132,119 @@ class CloudSyncRepository @Inject constructor(
             null
         }
     }
+
+    suspend fun fetchCloudStatus(): Triple<BridgeConfigSnapshot, CircuitBreakerStatus, Boolean> {
+        val status = api.getStatus()
+        val bridge = status.obj("bridge")
+        val config = BridgeConfigSnapshot(
+            bridgeId = bridge?.string("bridgeId").orEmpty(),
+            glookoEmail = bridge?.string("glookoEmail").orEmpty(),
+            nightscoutUrl = bridge?.string("nightscoutUrl").orEmpty(),
+            useTokenAuth = bridge?.bool("useTokenAuth") ?: false,
+            syncEnabled = bridge?.bool("syncEnabled") ?: false,
+            backfillDays = bridge?.int("backfillDays", 7) ?: 7,
+            syncFromOverride = bridge?.string("syncFromOverride").orEmpty(),
+            postPumpModeNotes = bridge?.bool("postPumpModeNotes", true) ?: true,
+            jitterInsulinTimestamps = bridge?.bool("jitterInsulinTimestamps") ?: false,
+            syncIntervalMinutes = bridge?.int("syncIntervalMinutes", 15) ?: 15,
+            timezone = bridge?.string("timezone").orEmpty(),
+            lastSuccessfulSyncEpochMs = bridge?.long("lastSuccessfulSyncEpochMs") ?: 0L,
+            nextScheduledSyncEpochMs = bridge?.long("nextScheduledSyncEpochMs") ?: 0L,
+            lastBolusesUploaded = bridge?.int("lastBolusesUploaded") ?: 0,
+            lastError = bridge?.stringOrNull("lastError"),
+            lastPumpModeNote = bridge?.stringOrNull("lastPumpModeNote"),
+            updatedAt = bridge?.stringOrNull("updatedAt"),
+        )
+        val cb = CircuitBreakerStatus(
+            syncEnabled = status.bool("syncEnabled", true),
+            syncAllowed = status.bool("syncAllowed", true),
+            circuitBreakerTripped = status.bool("circuitBreakerTripped"),
+            trippedAt = status.stringOrNull("trippedAt"),
+            trippedReason = status.stringOrNull("trippedReason"),
+            overrideUntil = status.stringOrNull("overrideUntil"),
+            overrideActive = status.bool("overrideActive"),
+            syncPaused = status.bool("syncPaused"),
+        )
+        return Triple(config, cb, status.bool("isAdmin"))
+    }
+
+    suspend fun isAdminUser(): Boolean =
+        runCatching { api.getStatus().bool("isAdmin") }.getOrDefault(false)
+
+    suspend fun listRuns(limit: Int = 30): List<SyncRunSummary> {
+        val resp = api.listRuns(limit)
+        val runs = resp["runs"]?.jsonArray ?: return emptyList()
+        return runs.mapNotNull { element ->
+            val obj = element.jsonObject
+            SyncRunSummary(
+                runId = obj.string("runId"),
+                mode = obj.string("mode"),
+                status = obj.string("status"),
+                currentStep = obj.string("currentStep"),
+                startedAt = obj.string("startedAt"),
+                completedAt = obj.string("completedAt"),
+                bolusesUploaded = obj.int("bolusesUploaded"),
+                pumpNoteUploaded = obj.bool("pumpNoteUploaded"),
+                error = obj.stringOrNull("error"),
+                diagnostics = obj.stringOrNull("diagnostics"),
+                executionArn = obj.string("executionArn"),
+                glookoOk = if (obj.containsKey("glookoOk")) obj.bool("glookoOk") else null,
+                nightscoutOk = if (obj.containsKey("nightscoutOk")) obj.bool("nightscoutOk") else null,
+            )
+        }.filter { it.runId.isNotBlank() }
+    }
+
+    suspend fun getRunDetail(runId: String): SyncRunSummary {
+        val obj = api.getRun(runId)
+        return SyncRunSummary(
+            runId = obj.string("runId", runId),
+            mode = obj.string("mode"),
+            status = obj.string("status"),
+            currentStep = obj.string("currentStep"),
+            startedAt = obj.string("startedAt"),
+            completedAt = obj.string("completedAt"),
+            bolusesUploaded = obj.int("bolusesUploaded"),
+            pumpNoteUploaded = obj.bool("pumpNoteUploaded"),
+            error = obj.stringOrNull("error"),
+            diagnostics = obj.stringOrNull("diagnostics"),
+            executionArn = obj.string("executionArn"),
+            glookoOk = if (obj.containsKey("glookoOk")) obj.bool("glookoOk") else null,
+            nightscoutOk = if (obj.containsKey("nightscoutOk")) obj.bool("nightscoutOk") else null,
+        )
+    }
+
+    suspend fun getRunRecords(runId: String): List<SyncedRecordSummary> {
+        val resp = api.getRunRecords(runId)
+        val records = resp["records"]?.jsonArray ?: return emptyList()
+        return records.mapNotNull { element ->
+            val obj = runCatching { element.jsonObject }.getOrNull() ?: return@mapNotNull null
+            SyncedRecordSummary(
+                dedupeKey = obj.string("dedupeKey"),
+                eventType = obj.string("eventType"),
+                createdAt = obj.string("createdAt"),
+                uploadedAtEpochMs = obj.long("uploadedAtEpochMs"),
+                runId = obj.string("runId", runId),
+            )
+        }
+    }
+
+    suspend fun tripCircuitBreaker(): CircuitBreakerStatus =
+        parseCircuitBreaker(api.tripCircuitBreaker())
+
+    suspend fun resetCircuitBreaker(): CircuitBreakerStatus =
+        parseCircuitBreaker(api.resetCircuitBreaker())
+
+    private fun parseCircuitBreaker(status: kotlinx.serialization.json.JsonObject): CircuitBreakerStatus =
+        CircuitBreakerStatus(
+            syncEnabled = status.bool("syncEnabled", true),
+            syncAllowed = status.bool("syncAllowed", true),
+            circuitBreakerTripped = status.bool("circuitBreakerTripped"),
+            trippedAt = status.stringOrNull("trippedAt"),
+            trippedReason = status.stringOrNull("trippedReason"),
+            overrideUntil = status.stringOrNull("overrideUntil"),
+            overrideActive = status.bool("overrideActive"),
+            syncPaused = status.bool("syncPaused"),
+        )
 
     private fun parsePreview(obj: kotlinx.serialization.json.JsonObject?): SyncPreview? {
         if (obj == null) return null

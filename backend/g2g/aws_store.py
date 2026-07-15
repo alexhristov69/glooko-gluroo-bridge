@@ -66,9 +66,11 @@ def get_global_params() -> dict[str, str]:
 
 
 def put_global_param(suffix: str, value: str) -> None:
+    # SSM String parameters cannot be empty; use a space like the CFN seed values.
+    stored = value if value is not None and str(value) != "" else " "
     _ssm().put_parameter(
         Name=global_param_name(suffix),
-        Value=value if value is not None else "",
+        Value=stored,
         Type="String",
         Overwrite=True,
     )
@@ -213,18 +215,24 @@ class DynamoDedupeStore:
             kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
         return keys
 
-    def insert_keys(self, records: list[tuple[str, str, str, int]]) -> None:
+    def insert_keys(
+        self,
+        records: list[tuple[str, str, str, int]],
+        run_id: str | None = None,
+    ) -> None:
+        """records: (dedupe_key, event_type, created_at, uploaded_at_epoch_ms)"""
         with self.table.batch_writer() as batch:
             for dedupe_key, event_type, created_at, uploaded_at in records:
-                batch.put_item(
-                    Item={
-                        "bridgeId": self.bridge_id,
-                        "dedupeKey": dedupe_key,
-                        "eventType": event_type,
-                        "createdAt": created_at,
-                        "uploadedAtEpochMs": uploaded_at,
-                    }
-                )
+                item: dict[str, Any] = {
+                    "bridgeId": self.bridge_id,
+                    "dedupeKey": dedupe_key,
+                    "eventType": event_type,
+                    "createdAt": created_at,
+                    "uploadedAtEpochMs": uploaded_at,
+                }
+                if run_id:
+                    item["runId"] = run_id
+                batch.put_item(Item=item)
 
     def delete_all(self) -> None:
         keys = list(self.get_all_keys())
@@ -289,13 +297,42 @@ def get_run(bridge_id: str, run_id: str) -> dict[str, Any] | None:
 
 
 def list_runs(bridge_id: str, limit: int = 20) -> list[dict[str, Any]]:
-    limit = max(1, min(50, limit))
-    resp = _tables()["runs"].query(
-        KeyConditionExpression=Key("bridgeId").eq(bridge_id),
-        ScanIndexForward=False,
-        Limit=limit,
-    )
-    return resp.get("Items", [])
+    """Return recent runs for a bridge, newest first by startedAt."""
+    limit = max(1, min(200, limit))
+    items: list[dict[str, Any]] = []
+    kwargs: dict[str, Any] = {
+        "KeyConditionExpression": Key("bridgeId").eq(bridge_id),
+        "ScanIndexForward": False,
+    }
+    # UUID sort keys are not chronological; fetch a page and sort by startedAt.
+    while len(items) < 500:
+        resp = _tables()["runs"].query(**kwargs)
+        items.extend(resp.get("Items", []))
+        if "LastEvaluatedKey" not in resp:
+            break
+        kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+    items.sort(key=lambda r: str(r.get("startedAt") or ""), reverse=True)
+    return items[:limit]
+
+
+def list_run_records(bridge_id: str, run_id: str, limit: int = 200) -> list[dict[str, Any]]:
+    """Synced records tagged with runId (FilterExpression; fine for single-bridge size)."""
+    limit = max(1, min(500, limit))
+    items: list[dict[str, Any]] = []
+    kwargs: dict[str, Any] = {
+        "KeyConditionExpression": Key("bridgeId").eq(bridge_id),
+        "FilterExpression": Attr("runId").eq(run_id),
+    }
+    while True:
+        resp = _tables()["records"].query(**kwargs)
+        items.extend(resp.get("Items", []))
+        if "LastEvaluatedKey" not in resp:
+            break
+        kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+        if len(items) >= limit:
+            break
+    items.sort(key=lambda r: int(r.get("uploadedAtEpochMs") or 0), reverse=True)
+    return items[:limit]
 
 
 def has_active_run(bridge_id: str) -> bool:

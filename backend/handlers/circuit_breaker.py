@@ -33,22 +33,20 @@ def _sum_metric(namespace: str, metric: str, minutes: int = 60) -> float:
     return float(max(p.get("Sum", 0) for p in points))
 
 
-def _publish_alert(reason: str) -> None:
+def _publish_alert(subject: str, message: str) -> None:
     topic = os.environ.get("ALERT_TOPIC_ARN")
     if not topic:
         return
-    sns = boto3.client("sns")
-    sns.publish(
-        TopicArn=topic,
-        Subject="G2G circuit breaker tripped — sync paused",
-        Message=(
-            f"Circuit breaker tripped.\n"
-            f"Reason: {reason}\n"
-            f"sync_enabled set to false.\n"
-            f"Override for 24h: POST /admin/circuit-breaker/override\n"
-            f"Full reset: POST /admin/circuit-breaker/reset\n"
-        ),
-    )
+    try:
+        sns = boto3.client("sns")
+        sns.publish(
+            TopicArn=topic,
+            Subject=subject[:100],
+            Message=message,
+        )
+    except Exception:
+        # Alert delivery must not undo or fail an otherwise successful trip/reset.
+        pass
 
 
 def trip(reason: str) -> dict[str, Any]:
@@ -57,8 +55,36 @@ def trip(reason: str) -> dict[str, Any]:
     store.put_global_param("circuit_breaker_tripped_at", now)
     store.put_global_param("circuit_breaker_tripped_reason", reason)
     # Do NOT clear override_until — operator-controlled
-    _publish_alert(reason)
+    _publish_alert(
+        subject="G2G circuit breaker tripped — sync paused",
+        message=(
+            f"Circuit breaker tripped.\n"
+            f"Reason: {reason}\n"
+            f"At: {now}\n"
+            f"sync_enabled set to false.\n"
+            f"Override for 24h: POST /admin/circuit-breaker/override\n"
+            f"Full reset: POST /admin/circuit-breaker/reset\n"
+        ),
+    )
     return {"tripped": True, "reason": reason, "at": now}
+
+
+def reset() -> dict[str, Any]:
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    store.put_global_param("sync_enabled", "true")
+    store.put_global_param("circuit_breaker_tripped_at", "")
+    store.put_global_param("circuit_breaker_tripped_reason", "")
+    store.put_global_param("circuit_breaker_override_until", "")
+    _publish_alert(
+        subject="G2G circuit breaker reset — sync allowed",
+        message=(
+            f"Circuit breaker reset.\n"
+            f"At: {now}\n"
+            f"sync_enabled set to true.\n"
+            f"Trip state and override cleared — scheduled sync may proceed.\n"
+        ),
+    )
+    return {"reset": True, "at": now}
 
 
 def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:

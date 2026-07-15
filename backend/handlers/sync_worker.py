@@ -76,7 +76,7 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
                 "diagnostics": diagnostics,
             }
 
-        result = engine.run_sync(settings)
+        result = engine.run_sync(settings, run_id=run_id)
         diagnostics = redact(result.diagnostics or "")
         store.update_run(
             bridge_id,

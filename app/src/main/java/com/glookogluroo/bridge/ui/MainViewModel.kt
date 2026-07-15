@@ -2,9 +2,13 @@ package com.glookogluroo.bridge.ui
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.glookogluroo.bridge.cloud.BridgeConfigSnapshot
+import com.glookogluroo.bridge.cloud.CircuitBreakerStatus
 import com.glookogluroo.bridge.cloud.CloudConfig
 import com.glookogluroo.bridge.cloud.CloudSyncRepository
 import com.glookogluroo.bridge.cloud.CognitoAuthRepository
+import com.glookogluroo.bridge.cloud.SyncRunSummary
+import com.glookogluroo.bridge.cloud.SyncedRecordSummary
 import com.glookogluroo.bridge.data.AppSettings
 import com.glookogluroo.bridge.data.SettingsRepository
 import com.glookogluroo.bridge.glooko.DeviceInfo
@@ -15,6 +19,7 @@ import com.glookogluroo.bridge.sync.SyncRepository
 import com.glookogluroo.bridge.sync.SyncWindowResolver
 import com.glookogluroo.bridge.sync.db.SyncState
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -41,7 +46,59 @@ data class MainUiState(
     /** True while restoring a saved cloud session on cold start. */
     val isBootstrapping: Boolean = false,
     val bootstrapMessage: String? = null,
-)
+    val selectedTab: AppTab = AppTab.Stats,
+    val isAdmin: Boolean = false,
+    val bridgeConfig: BridgeConfigSnapshot = BridgeConfigSnapshot(),
+    val circuitBreaker: CircuitBreakerStatus = CircuitBreakerStatus(),
+    val recentRuns: List<SyncRunSummary> = emptyList(),
+    val selectedRunId: String? = null,
+    val selectedRun: SyncRunSummary? = null,
+    val selectedRunRecords: List<SyncedRecordSummary> = emptyList(),
+    val statsLoading: Boolean = false,
+    /** When true, only show runs that uploaded at least one bolus or pump note. */
+    val runsOnlyWithRecords: Boolean = false,
+    /** 0-based page index for the sync-runs list. */
+    val runsPage: Int = 0,
+    /** True while pull/reset is waiting for verified backend commit. */
+    val circuitBreakerPending: Boolean = false,
+    val circuitBreakerPendingLabel: String? = null,
+    /** Draft text for numeric fields so empty/partial input can be cleared while typing. */
+    val backfillDaysText: String = AppSettings().backfillDays.toString(),
+    val syncIntervalMinutesText: String = AppSettings().syncIntervalMinutes.toString(),
+    /** Popup validation message for Settings Save/Test/Sync. */
+    val settingsValidationError: String? = null,
+) {
+    companion object {
+        const val RUNS_PAGE_SIZE = 10
+    }
+
+    val filteredRuns: List<SyncRunSummary>
+        get() = if (runsOnlyWithRecords) {
+            recentRuns.filter { it.hasSyncedRecords }
+        } else {
+            recentRuns
+        }
+
+    val runsTotalPages: Int
+        get() = ((filteredRuns.size + RUNS_PAGE_SIZE - 1) / RUNS_PAGE_SIZE).coerceAtLeast(1)
+
+    val runsPageClamped: Int
+        get() = runsPage.coerceIn(0, (runsTotalPages - 1).coerceAtLeast(0))
+
+    val pagedRuns: List<SyncRunSummary>
+        get() {
+            val start = runsPageClamped * RUNS_PAGE_SIZE
+            return filteredRuns.drop(start).take(RUNS_PAGE_SIZE)
+        }
+}
+
+private val SyncRunSummary.hasSyncedRecords: Boolean
+    get() = bolusesUploaded > 0 || pumpNoteUploaded
+
+enum class AppTab {
+    Stats,
+    Settings,
+}
 
 @HiltViewModel
 class MainViewModel @Inject constructor(
@@ -100,6 +157,8 @@ class MainViewModel @Inject constructor(
                         _uiState.update {
                             it.copy(
                                 settings = settings,
+                                backfillDaysText = settings.backfillDays.toString(),
+                                syncIntervalMinutesText = settings.syncIntervalMinutes.toString(),
                                 isBootstrapping = false,
                                 bootstrapMessage = null,
                                 signedIn = false,
@@ -140,6 +199,8 @@ class MainViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         settings = mergedSettings,
+                        backfillDaysText = mergedSettings.backfillDays.toString(),
+                        syncIntervalMinutesText = mergedSettings.syncIntervalMinutes.toString(),
                         syncState = syncState,
                         signedIn = signedIn || !CloudConfig.enabled,
                         authEmail = session?.email,
@@ -147,6 +208,9 @@ class MainViewModel @Inject constructor(
                         isBootstrapping = false,
                         bootstrapMessage = null,
                     )
+                }
+                if (CloudConfig.enabled && signedIn) {
+                    refreshStats()
                 }
             } catch (e: Exception) {
                 _uiState.update {
@@ -167,6 +231,270 @@ class MainViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    fun selectTab(tab: AppTab) {
+        _uiState.update { it.copy(selectedTab = tab, message = null, error = null) }
+        if (tab == AppTab.Stats && CloudConfig.enabled && _uiState.value.signedIn) {
+            refreshStats()
+        }
+    }
+
+    fun refreshStats() {
+        if (!CloudConfig.enabled || !_uiState.value.signedIn) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(statsLoading = true, error = null) }
+            try {
+                val (config, cb, isAdmin) = cloudSyncRepository.fetchCloudStatus()
+                val runs = cloudSyncRepository.listRuns(200)
+                val state = _uiState.value
+                val filtered = if (state.runsOnlyWithRecords) {
+                    runs.filter { it.bolusesUploaded > 0 || it.pumpNoteUploaded }
+                } else {
+                    runs
+                }
+                val selectedId = when {
+                    state.selectedRunId != null &&
+                        filtered.any { it.runId == state.selectedRunId } -> state.selectedRunId
+                    else -> filtered.firstOrNull()?.runId
+                }
+                var selectedRun: SyncRunSummary? = null
+                var records: List<SyncedRecordSummary> = emptyList()
+                if (selectedId != null) {
+                    selectedRun = runCatching { cloudSyncRepository.getRunDetail(selectedId) }
+                        .getOrElse { filtered.firstOrNull { it.runId == selectedId } }
+                    records = runCatching { cloudSyncRepository.getRunRecords(selectedId) }
+                        .getOrDefault(emptyList())
+                }
+                _uiState.update {
+                    it.copy(
+                        statsLoading = false,
+                        bridgeConfig = config,
+                        circuitBreaker = cb,
+                        isAdmin = isAdmin,
+                        recentRuns = runs,
+                        selectedRunId = selectedId,
+                        selectedRun = selectedRun,
+                        selectedRunRecords = records,
+                        syncState = SyncState(
+                            lastSuccessfulSyncEpochMs = config.lastSuccessfulSyncEpochMs,
+                            nextScheduledSyncEpochMs = config.nextScheduledSyncEpochMs,
+                            lastError = config.lastError,
+                            lastBolusesUploaded = config.lastBolusesUploaded,
+                        ),
+                        cloudPausedBanner = if (cb.syncPaused) {
+                            "Sync paused (${cb.trippedReason ?: "cost guard"})."
+                        } else {
+                            null
+                        },
+                    )
+                }
+                // Clamp page after recentRuns update (computed getters use new list).
+                _uiState.update { state ->
+                    state.copy(
+                        runsPage = state.runsPage.coerceIn(
+                            0,
+                            (state.runsTotalPages - 1).coerceAtLeast(0),
+                        ),
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(statsLoading = false, error = e.message)
+                }
+            }
+        }
+    }
+
+    fun selectRun(runId: String) {
+        viewModelScope.launch {
+            _uiState.update {
+                it.copy(selectedRunId = runId, statsLoading = true, error = null)
+            }
+            try {
+                val detail = cloudSyncRepository.getRunDetail(runId)
+                val records = cloudSyncRepository.getRunRecords(runId)
+                _uiState.update {
+                    it.copy(
+                        statsLoading = false,
+                        selectedRun = detail,
+                        selectedRunRecords = records,
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(statsLoading = false, error = e.message)
+                }
+            }
+        }
+    }
+
+    fun setRunsOnlyWithRecords(enabled: Boolean) {
+        val previousSelected = _uiState.value.selectedRunId
+        _uiState.update { state ->
+            state.copy(runsOnlyWithRecords = enabled, runsPage = 0)
+        }
+        val filtered = _uiState.value.filteredRuns
+        val nextSelected = when {
+            previousSelected != null && filtered.any { it.runId == previousSelected } ->
+                previousSelected
+            else -> filtered.firstOrNull()?.runId
+        }
+        if (nextSelected == null) {
+            _uiState.update {
+                it.copy(selectedRunId = null, selectedRun = null, selectedRunRecords = emptyList())
+            }
+        } else if (nextSelected != previousSelected) {
+            selectRun(nextSelected)
+        }
+    }
+
+    fun setRunsPage(page: Int) {
+        _uiState.update { state ->
+            state.copy(runsPage = page.coerceIn(0, (state.runsTotalPages - 1).coerceAtLeast(0)))
+        }
+    }
+
+    fun tripCircuitBreaker() {
+        viewModelScope.launch {
+            mutateCircuitBreaker(
+                actionLabel = "Pulling circuit breaker…",
+                verifyingLabel = "Verifying circuit breaker is tripped…",
+                retryLabel = "Backend not updated yet — retrying…",
+                successMessage = "Circuit breaker pulled — sync paused",
+                expectTripped = true,
+                call = { cloudSyncRepository.tripCircuitBreaker() },
+            )
+        }
+    }
+
+    fun resetCircuitBreaker() {
+        viewModelScope.launch {
+            mutateCircuitBreaker(
+                actionLabel = "Resetting circuit breaker…",
+                verifyingLabel = "Verifying circuit breaker is closed…",
+                retryLabel = "Backend not updated yet — retrying…",
+                successMessage = "Circuit breaker reset — sync allowed",
+                expectTripped = false,
+                call = { cloudSyncRepository.resetCircuitBreaker() },
+            )
+        }
+    }
+
+    private suspend fun mutateCircuitBreaker(
+        actionLabel: String,
+        verifyingLabel: String,
+        retryLabel: String,
+        successMessage: String,
+        expectTripped: Boolean,
+        call: suspend () -> CircuitBreakerStatus,
+    ) {
+        _uiState.update {
+            it.copy(
+                isBusy = true,
+                circuitBreakerPending = true,
+                circuitBreakerPendingLabel = actionLabel,
+                error = null,
+                message = null,
+            )
+        }
+        try {
+            call()
+            _uiState.update {
+                it.copy(circuitBreakerPendingLabel = verifyingLabel)
+            }
+            val verified = verifyCircuitBreakerCommitted(expectTripped = expectTripped, retryLabel = retryLabel)
+            if (verified != null) {
+                _uiState.update {
+                    it.copy(
+                        isBusy = false,
+                        circuitBreakerPending = false,
+                        circuitBreakerPendingLabel = null,
+                        circuitBreaker = verified,
+                        message = successMessage,
+                        cloudPausedBanner = if (verified.syncPaused) {
+                            "Sync paused (${verified.trippedReason ?: "cost guard"})."
+                        } else {
+                            null
+                        },
+                        error = null,
+                    )
+                }
+            } else {
+                // Refresh whatever the backend currently reports, then surface the failure.
+                val current = runCatching {
+                    cloudSyncRepository.fetchCloudStatus().second
+                }.getOrDefault(_uiState.value.circuitBreaker)
+                _uiState.update {
+                    it.copy(
+                        isBusy = false,
+                        circuitBreakerPending = false,
+                        circuitBreakerPendingLabel = null,
+                        circuitBreaker = current,
+                        cloudPausedBanner = if (current.syncPaused) {
+                            "Sync paused (${current.trippedReason ?: "cost guard"})."
+                        } else {
+                            null
+                        },
+                        message = null,
+                        error = "Could not verify the circuit breaker change. Please try again later.",
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            val current = runCatching {
+                cloudSyncRepository.fetchCloudStatus().second
+            }.getOrDefault(_uiState.value.circuitBreaker)
+            _uiState.update {
+                it.copy(
+                    isBusy = false,
+                    circuitBreakerPending = false,
+                    circuitBreakerPendingLabel = null,
+                    circuitBreaker = current,
+                    cloudPausedBanner = if (current.syncPaused) {
+                        "Sync paused (${current.trippedReason ?: "cost guard"})."
+                    } else {
+                        null
+                    },
+                    message = null,
+                    error = e.message ?: "Could not update the circuit breaker. Please try again later.",
+                )
+            }
+        }
+    }
+
+    /**
+     * Checks /status until the breaker matches [expectTripped].
+     * Initial check, then up to two retries with 10s between each.
+     */
+    private suspend fun verifyCircuitBreakerCommitted(
+        expectTripped: Boolean,
+        retryLabel: String,
+    ): CircuitBreakerStatus? {
+        repeat(3) { attempt ->
+            val status = cloudSyncRepository.fetchCloudStatus().second
+            if (matchesExpectedCircuitBreaker(status, expectTripped)) {
+                return status
+            }
+            if (attempt < 2) {
+                _uiState.update {
+                    it.copy(
+                        circuitBreakerPendingLabel =
+                            "$retryLabel (${attempt + 1}/2)",
+                    )
+                }
+                delay(10_000)
+            }
+        }
+        return null
+    }
+
+    private fun matchesExpectedCircuitBreaker(
+        status: CircuitBreakerStatus,
+        expectTripped: Boolean,
+    ): Boolean {
+        val looksTripped = status.circuitBreakerTripped || status.syncPaused || !status.syncEnabled
+        return if (expectTripped) looksTripped else !looksTripped && status.syncEnabled && status.syncAllowed
     }
 
     fun signIn(email: String, password: String) {
@@ -221,7 +549,19 @@ class MainViewModel @Inject constructor(
     fun signOut() {
         authRepository.signOut()
         _uiState.update {
-            it.copy(signedIn = !CloudConfig.enabled, authEmail = null, message = "Signed out")
+            it.copy(
+                signedIn = !CloudConfig.enabled,
+                authEmail = null,
+                message = "Signed out",
+                selectedTab = AppTab.Stats,
+                recentRuns = emptyList(),
+                selectedRunId = null,
+                selectedRun = null,
+                selectedRunRecords = emptyList(),
+                bridgeConfig = BridgeConfigSnapshot(),
+                circuitBreaker = CircuitBreakerStatus(),
+                isAdmin = false,
+            )
         }
     }
 
@@ -236,30 +576,88 @@ class MainViewModel @Inject constructor(
         updateSettings { it.copy(jitterInsulinTimestamps = value) }
 
     fun updateBackfillDays(value: String) {
-        val days = value.toIntOrNull() ?: return
-        updateSettings { it.copy(backfillDays = days) }
+        if (value.any { !it.isDigit() }) return
+        _uiState.update {
+            it.copy(
+                backfillDaysText = value,
+                message = null,
+                error = null,
+                settingsValidationError = null,
+            )
+        }
     }
 
     fun updateSyncFromOverride(value: String) = updateSettings { it.copy(syncFromOverride = value) }
 
     fun updateSyncIntervalMinutes(value: String) {
-        val minutes = value.toIntOrNull() ?: return
-        updateSettings { it.copy(syncIntervalMinutes = minutes) }
+        if (value.any { !it.isDigit() }) return
+        _uiState.update {
+            it.copy(
+                syncIntervalMinutesText = value,
+                message = null,
+                error = null,
+                settingsValidationError = null,
+            )
+        }
+    }
+
+    fun dismissValidationError() {
+        _uiState.update { it.copy(settingsValidationError = null) }
+    }
+
+    /**
+     * Commits draft numeric fields into [AppSettings] or returns an error message.
+     */
+    private fun commitNumericDraftsOrError(): String? {
+        val state = _uiState.value
+        val backfill = state.backfillDaysText.toIntOrNull()
+        if (backfill == null || backfill !in 1..30) {
+            return "Set Backfill days to a whole number between 1 and 30."
+        }
+        val interval = state.syncIntervalMinutesText.toIntOrNull()
+        if (interval == null || interval !in 1..240) {
+            return "Set Sync interval to a whole number of minutes between 1 and 240."
+        }
+        _uiState.update {
+            it.copy(
+                settings = it.settings.copy(
+                    backfillDays = backfill,
+                    syncIntervalMinutes = interval,
+                ),
+                backfillDaysText = backfill.toString(),
+                syncIntervalMinutesText = interval.toString(),
+            )
+        }
+        return null
+    }
+
+    private fun validateSettingsForSave(): Boolean {
+        commitNumericDraftsOrError()?.let { msg ->
+            _uiState.update {
+                it.copy(settingsValidationError = msg, message = null, error = null)
+            }
+            return false
+        }
+        val settings = _uiState.value.settings
+        if (!SyncWindowResolver.isValidCustomStartInput(settings.syncFromOverride)) {
+            _uiState.update {
+                it.copy(
+                    settingsValidationError =
+                        "Set Sync from to blank or yyyy-MM-dd HH:mm (local time).",
+                    message = null,
+                    error = null,
+                )
+            }
+            return false
+        }
+        return true
     }
 
     fun saveSettings() {
         viewModelScope.launch {
+            if (!validateSettingsForSave()) return@launch
             val settings = _uiState.value.settings
-            if (!SyncWindowResolver.isValidCustomStartInput(settings.syncFromOverride)) {
-                _uiState.update {
-                    it.copy(
-                        error = "Sync from must be blank or yyyy-MM-dd HH:mm (local time)",
-                        message = null,
-                    )
-                }
-                return@launch
-            }
-            _uiState.update { it.copy(isBusy = true, error = null) }
+            _uiState.update { it.copy(isBusy = true, error = null, settingsValidationError = null) }
             try {
                 if (CloudConfig.enabled) {
                     cloudSyncRepository.saveSettings(settings)
@@ -286,6 +684,8 @@ class MainViewModel @Inject constructor(
                         },
                         error = null,
                         syncState = syncState,
+                        backfillDaysText = settings.backfillDays.toString(),
+                        syncIntervalMinutesText = settings.syncIntervalMinutes.toString(),
                     )
                 }
             } catch (e: Exception) {
@@ -334,11 +734,13 @@ class MainViewModel @Inject constructor(
 
     fun testConnections() {
         viewModelScope.launch {
+            if (!validateSettingsForSave()) return@launch
             _uiState.update {
                 it.copy(
                     isBusy = true,
                     message = null,
                     error = null,
+                    settingsValidationError = null,
                     diagnostics = null,
                     syncPreview = null,
                     syncPreviewDryRun = true,
@@ -401,11 +803,13 @@ class MainViewModel @Inject constructor(
 
     fun syncNow() {
         viewModelScope.launch {
+            if (!validateSettingsForSave()) return@launch
             _uiState.update {
                 it.copy(
                     isBusy = true,
                     message = null,
                     error = null,
+                    settingsValidationError = null,
                     diagnostics = null,
                     connectionTest = null,
                     syncPreview = null,
@@ -443,6 +847,9 @@ class MainViewModel @Inject constructor(
                         error = result.error,
                     )
                 }
+                if (CloudConfig.enabled) {
+                    refreshStats()
+                }
             } catch (e: Exception) {
                 _uiState.update { it.copy(isBusy = false, error = e.message) }
             }
@@ -450,6 +857,13 @@ class MainViewModel @Inject constructor(
     }
 
     private fun updateSettings(transform: (AppSettings) -> AppSettings) {
-        _uiState.update { it.copy(settings = transform(it.settings), message = null, error = null) }
+        _uiState.update {
+            it.copy(
+                settings = transform(it.settings),
+                message = null,
+                error = null,
+                settingsValidationError = null,
+            )
+        }
     }
 }

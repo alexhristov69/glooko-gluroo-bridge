@@ -40,11 +40,22 @@ class BridgeApiClient @Inject constructor(
 
     suspend fun getRun(runId: String): JsonObject = request("GET", "/runs/$runId")
 
+    suspend fun listRuns(limit: Int = 30): JsonObject = request("GET", "/runs?limit=$limit")
+
+    suspend fun getRunRecords(runId: String): JsonObject =
+        request("GET", "/runs/$runId/records")
+
     suspend fun getStatus(): JsonObject = request("GET", "/status")
 
     suspend fun resetSync(): JsonObject = request("POST", "/admin/reset-sync")
 
     suspend fun clearHistory(): JsonObject = request("POST", "/admin/clear-history")
+
+    suspend fun tripCircuitBreaker(): JsonObject =
+        request("POST", "/admin/circuit-breaker/trip")
+
+    suspend fun resetCircuitBreaker(): JsonObject =
+        request("POST", "/admin/circuit-breaker/reset")
 
     suspend fun pollRunUntilDone(
         runId: String,

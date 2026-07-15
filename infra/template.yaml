@@ -231,6 +231,9 @@ Resources:
             - Effect: Allow
               Action: [kms:Decrypt, kms:Encrypt, kms:GenerateDataKey]
               Resource: '*'
+            - Effect: Allow
+              Action: [sns:Publish]
+              Resource: !Ref AlertTopic
       Events:
         SettingsPut:
           Type: HttpApi
@@ -264,6 +267,14 @@ Resources:
             Method: GET
             Auth:
               Authorizer: CognitoJwt
+        RunRecordsGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /runs/{runId}/records
+            Method: GET
+            Auth:
+              Authorizer: CognitoJwt
         StatusGet:
           Type: HttpApi
           Properties:
@@ -294,6 +305,14 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /admin/circuit-breaker
             Method: GET
+            Auth:
+              Authorizer: CognitoJwt
+        AdminCbTrip:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /admin/circuit-breaker/trip
+            Method: POST
             Auth:
               Authorizer: CognitoJwt
         AdminCbOverride:

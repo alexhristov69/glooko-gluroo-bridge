@@ -26,7 +26,11 @@ from g2g import treatment_mapper as tm
 class DedupeStore(Protocol):
     def get_all_keys(self) -> set[str]: ...
 
-    def insert_keys(self, records: list[tuple[str, str, str, int]]) -> None:
+    def insert_keys(
+        self,
+        records: list[tuple[str, str, str, int]],
+        run_id: str | None = None,
+    ) -> None:
         """records: (dedupe_key, event_type, created_at, uploaded_at_epoch_ms)"""
         ...
 
@@ -230,7 +234,7 @@ class SyncEngine:
             sync_preview=preview,
         )
 
-    def run_sync(self, settings: AppSettings) -> SyncResult:
+    def run_sync(self, settings: AppSettings, run_id: str | None = None) -> SyncResult:
         if not (
             settings.glooko_email
             and settings.glooko_password
@@ -298,7 +302,7 @@ class SyncEngine:
                 (tm.deduplication_key(t), t.event_type, t.created_at, uploaded_at)
                 for t in treatments
             ]
-            self.dedupe.insert_keys(records)
+            self.dedupe.insert_keys(records, run_id=run_id)
 
             log.append("")
             log.append("=== Sync complete ===")
