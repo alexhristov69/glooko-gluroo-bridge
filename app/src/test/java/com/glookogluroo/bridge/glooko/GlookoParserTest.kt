@@ -8,8 +8,18 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.time.Instant
+import java.time.ZoneId
 
 class GlookoParserTest {
+    @Test
+    fun parseTimestamp_treatsGlookoZSuffixAsLocalWallClock() {
+        val pacific = ZoneId.of("America/Los_Angeles")
+        val instant = GlookoParser.parseTimestamp("2026-07-06T15:00:00.000Z", pacific)
+
+        assertEquals(Instant.parse("2026-07-06T22:00:00.000Z"), instant)
+    }
+
     @Test
     fun parseBolusEntries_extractsDeliveredBoluses() {
         val graphData = buildJsonObject {

@@ -1,5 +1,6 @@
 package com.glookogluroo.bridge.nightscout
 
+import com.glookogluroo.bridge.util.JsonFormatter
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -16,35 +17,70 @@ class NightscoutClient(
     private val normalizedBaseUrl = baseUrl.trimEnd('/')
     private val apiSecretHash = sha1(apiSecret)
 
-    fun testConnection(): Result<Unit> = runCatching {
-        val request = authenticatedRequest("$normalizedBaseUrl/api/v1/status.json").get().build()
+    fun testConnection(): Result<String> = runCatching {
+        val url = "$normalizedBaseUrl/api/v1/status.json"
+        val authMode = if (useTokenAuth) "token query param" else "api-secret header (SHA1)"
+        val request = authenticatedRequest(url).get().build()
         httpClient.newCall(request).execute().use { response ->
+            val body = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
-                error("Nightscout status check failed: HTTP ${response.code}")
+                error(
+                    "Nightscout status check failed: HTTP ${response.code}\n" +
+                        "URL: $url\n" +
+                        "Auth: $authMode\n" +
+                        "Body: ${body.take(300).ifBlank { "(empty)" }}",
+                )
+            }
+            buildString {
+                append("HTTP ${response.code} OK")
+                append("\nURL: $url")
+                append("\nAuth: $authMode")
+                if (body.isNotBlank()) {
+                    append("\nBody:")
+                    append("\n")
+                    append(JsonFormatter.prettify(body.take(2000)))
+                }
             }
         }
     }
 
-    fun postTreatments(treatments: List<NightscoutTreatment>): Result<Int> = runCatching {
-        if (treatments.isEmpty()) return@runCatching 0
+    fun postTreatments(treatments: List<NightscoutTreatment>): Result<NightscoutUploadReport> = runCatching {
+        if (treatments.isEmpty()) {
+            return@runCatching NightscoutUploadReport(uploadedCount = 0, batches = emptyList())
+        }
 
+        val batches = mutableListOf<NightscoutBatchResponse>()
         var uploaded = 0
-        treatments.chunked(BATCH_SIZE).forEach { batch ->
-            val body = NightscoutJson.encodeTreatments(batch)
-                .toRequestBody("application/json".toMediaType())
-            val request = authenticatedRequest("$normalizedBaseUrl/api/v1/treatments")
-                .post(body)
+        treatments.chunked(BATCH_SIZE).forEachIndexed { index, batch ->
+            val requestBody = NightscoutJson.encodeTreatments(batch)
+            val url = "$normalizedBaseUrl/api/v1/treatments"
+            val httpRequest = authenticatedRequest(url)
+                .post(requestBody.toRequestBody("application/json".toMediaType()))
                 .build()
 
-            httpClient.newCall(request).execute().use { response ->
+            httpClient.newCall(httpRequest).execute().use { response ->
+                val responseBody = response.body?.string().orEmpty()
                 if (!response.isSuccessful) {
-                    val errorBody = response.body?.string().orEmpty()
-                    error("Nightscout upload failed: HTTP ${response.code} $errorBody")
+                    error(
+                        buildString {
+                            append("Nightscout upload failed: HTTP ${response.code}")
+                            append("\nURL: $url")
+                            append("\nResponse: ${responseBody.ifBlank { "(empty)" }}")
+                        },
+                    )
                 }
+                batches += NightscoutBatchResponse(
+                    batchIndex = index,
+                    batchSize = batch.size,
+                    httpCode = response.code,
+                    requestUrl = url,
+                    requestBody = requestBody,
+                    responseBody = responseBody,
+                )
                 uploaded += batch.size
             }
         }
-        uploaded
+        NightscoutUploadReport(uploadedCount = uploaded, batches = batches)
     }
 
     private fun authenticatedRequest(url: String): Request.Builder {

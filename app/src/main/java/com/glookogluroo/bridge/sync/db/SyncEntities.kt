@@ -6,6 +6,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
+import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "synced_records")
 data class SyncedRecord(
@@ -25,12 +26,16 @@ interface SyncedRecordDao {
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertAll(records: List<SyncedRecord>)
+
+    @Query("DELETE FROM synced_records")
+    suspend fun deleteAll()
 }
 
 @Entity(tableName = "sync_state")
 data class SyncState(
     @PrimaryKey val id: Int = 1,
     val lastSuccessfulSyncEpochMs: Long = 0,
+    val nextScheduledSyncEpochMs: Long = 0,
     val lastPumpModeNote: String? = null,
     val lastError: String? = null,
     val lastBolusesUploaded: Int = 0,
@@ -40,6 +45,9 @@ data class SyncState(
 interface SyncStateDao {
     @Query("SELECT * FROM sync_state WHERE id = 1")
     suspend fun get(): SyncState?
+
+    @Query("SELECT * FROM sync_state WHERE id = 1")
+    fun observe(): Flow<SyncState?>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(state: SyncState)

@@ -15,3 +15,10 @@ app/build
 bin/
 gen/
 out/
+backend/.aws-sam-build/
+backend/.pytest_cache/
+backend/**/__pycache__/
+infra/template.built.yaml
+infra/.aws-sam/
+
+.kotlin/

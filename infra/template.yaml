@@ -1,0 +1,555 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Glooko Gluroo Bridge — multi-tenant serverless sync backend
+
+Parameters:
+  EnvironmentName:
+    Type: String
+    Default: prod
+  AlertEmail:
+    Type: String
+    Default: ''
+    Description: Email for SNS cost/circuit-breaker alerts (optional)
+  MonthlyBudgetUsd:
+    Type: Number
+    Default: 10
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 30
+    MemorySize: 256
+    Architectures: [x86_64]
+    Environment:
+      Variables:
+        BRIDGES_TABLE: !Ref BridgesTable
+        SYNC_RUNS_TABLE: !Ref SyncRunsTable
+        SYNCED_RECORDS_TABLE: !Ref SyncedRecordsTable
+        SSM_PREFIX: !Sub /g2g/${EnvironmentName}
+        ALERT_TOPIC_ARN: !Ref AlertTopic
+
+Conditions:
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, '']]
+
+Resources:
+  # ---- Cognito ----
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub g2g-${EnvironmentName}-users
+      AutoVerifiedAttributes: [email]
+      UsernameAttributes: [email]
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 10
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: false
+          RequireUppercase: true
+      Schema:
+        - Name: email
+          Required: true
+          Mutable: true
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub g2g-${EnvironmentName}-android
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_USER_SRP_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+        - ALLOW_USER_PASSWORD_AUTH
+      PreventUserExistenceErrors: ENABLED
+
+  AdminGroup:
+    Type: AWS::Cognito::UserPoolGroup
+    Properties:
+      GroupName: g2g-admins
+      UserPoolId: !Ref UserPool
+      Description: Operators who can override/reset the circuit breaker
+
+  # ---- DynamoDB ----
+  BridgesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub g2g-${EnvironmentName}-bridges
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: bridgeId
+          AttributeType: S
+        - AttributeName: syncEnabledKey
+          AttributeType: S
+        - AttributeName: nextScheduledSyncEpochMs
+          AttributeType: N
+      KeySchema:
+        - AttributeName: bridgeId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: sync-enabled-index
+          KeySchema:
+            - AttributeName: syncEnabledKey
+              KeyType: HASH
+            - AttributeName: nextScheduledSyncEpochMs
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  SyncRunsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub g2g-${EnvironmentName}-sync-runs
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: bridgeId
+          AttributeType: S
+        - AttributeName: runId
+          AttributeType: S
+        - AttributeName: dateKey
+          AttributeType: S
+      KeySchema:
+        - AttributeName: bridgeId
+          KeyType: HASH
+        - AttributeName: runId
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+      GlobalSecondaryIndexes:
+        - IndexName: dateKey-index
+          KeySchema:
+            - AttributeName: dateKey
+              KeyType: HASH
+            - AttributeName: runId
+              KeyType: RANGE
+          Projection:
+            ProjectionType: KEYS_ONLY
+
+  SyncedRecordsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub g2g-${EnvironmentName}-synced-records
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: bridgeId
+          AttributeType: S
+        - AttributeName: dedupeKey
+          AttributeType: S
+      KeySchema:
+        - AttributeName: bridgeId
+          KeyType: HASH
+        - AttributeName: dedupeKey
+          KeyType: RANGE
+
+  # ---- SSM global params ----
+  SyncEnabledParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /g2g/${EnvironmentName}/global/sync_enabled
+      Type: String
+      Value: 'true'
+      Description: Global kill switch for sync
+
+  CircuitBreakerTrippedAtParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /g2g/${EnvironmentName}/global/circuit_breaker_tripped_at
+      Type: String
+      Value: ' '
+      Description: ISO timestamp when circuit breaker last tripped (space = empty)
+
+  CircuitBreakerReasonParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /g2g/${EnvironmentName}/global/circuit_breaker_tripped_reason
+      Type: String
+      Value: ' '
+      Description: Reason string for last trip
+
+  CircuitBreakerOverrideParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub /g2g/${EnvironmentName}/global/circuit_breaker_override_until
+      Type: String
+      Value: ' '
+      Description: ISO timestamp — sync allowed while now < this value
+
+  # ---- SNS Alerts ----
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub g2g-${EnvironmentName}-alerts
+
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub g2g-${EnvironmentName}-alarms
+
+  AlertSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref AlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # ---- Lambdas ----
+  ApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub g2g-${EnvironmentName}-api
+      CodeUri: ../backend/
+      Handler: handlers.api.handler
+      Timeout: 30
+      # Reserved concurrency omitted: new accounts often have only 10 total
+      # concurrent executions; reserving any would drop Unreserved below the
+      # AWS minimum of 10. Re-add after a quota increase (Service Quotas → Lambda).
+      Environment:
+        Variables:
+          STATE_MACHINE_ARN: !Ref SyncStateMachine
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref BridgesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SyncRunsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SyncedRecordsTable
+        - StepFunctionsExecutionPolicy:
+            StateMachineName: !GetAtt SyncStateMachine.Name
+        - Statement:
+            - Effect: Allow
+              Action:
+                - ssm:GetParameter
+                - ssm:GetParameters
+                - ssm:PutParameter
+              Resource:
+                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/g2g/${EnvironmentName}/*
+            - Effect: Allow
+              Action: [kms:Decrypt, kms:Encrypt, kms:GenerateDataKey]
+              Resource: '*'
+      Events:
+        SettingsPut:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /settings
+            Method: PUT
+            Auth:
+              Authorizer: CognitoJwt
+        RunsPost:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /runs
+            Method: POST
+            Auth:
+              Authorizer: CognitoJwt
+        RunsGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /runs
+            Method: GET
+            Auth:
+              Authorizer: CognitoJwt
+        RunGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /runs/{runId}
+            Method: GET
+            Auth:
+              Authorizer: CognitoJwt
+        StatusGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /status
+            Method: GET
+            Auth:
+              Authorizer: CognitoJwt
+        AdminResetSync:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /admin/reset-sync
+            Method: POST
+            Auth:
+              Authorizer: CognitoJwt
+        AdminClearHistory:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /admin/clear-history
+            Method: POST
+            Auth:
+              Authorizer: CognitoJwt
+        AdminCbGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /admin/circuit-breaker
+            Method: GET
+            Auth:
+              Authorizer: CognitoJwt
+        AdminCbOverride:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /admin/circuit-breaker/override
+            Method: POST
+            Auth:
+              Authorizer: CognitoJwt
+        AdminCbReset:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /admin/circuit-breaker/reset
+            Method: POST
+            Auth:
+              Authorizer: CognitoJwt
+
+  SyncWorkerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub g2g-${EnvironmentName}-sync-worker
+      CodeUri: ../backend/
+      Handler: handlers.sync_worker.handler
+      Timeout: 120
+      MemorySize: 256
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref BridgesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SyncRunsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SyncedRecordsTable
+        - Statement:
+            - Effect: Allow
+              Action: [ssm:GetParameter, ssm:GetParameters]
+              Resource:
+                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/g2g/${EnvironmentName}/*
+            - Effect: Allow
+              Action: [kms:Decrypt]
+              Resource: '*'
+
+  SchedulerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub g2g-${EnvironmentName}-scheduler
+      CodeUri: ../backend/
+      Handler: handlers.scheduler.handler
+      Timeout: 60
+      Environment:
+        Variables:
+          STATE_MACHINE_ARN: !Ref SyncStateMachine
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref BridgesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SyncRunsTable
+        - StepFunctionsExecutionPolicy:
+            StateMachineName: !GetAtt SyncStateMachine.Name
+        - Statement:
+            - Effect: Allow
+              Action: [ssm:GetParameter, ssm:GetParameters]
+              Resource:
+                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/g2g/${EnvironmentName}/global/*
+      Events:
+        Tick:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 minute)
+            Description: Evaluate due bridges and start sync runs
+
+  CircuitBreakerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub g2g-${EnvironmentName}-circuit-breaker
+      CodeUri: ../backend/
+      Handler: handlers.circuit_breaker.handler
+      Timeout: 30
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref SyncRunsTable
+        - Statement:
+            - Effect: Allow
+              Action: [ssm:GetParameter, ssm:GetParameters, ssm:PutParameter]
+              Resource:
+                - !Sub arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/g2g/${EnvironmentName}/global/*
+            - Effect: Allow
+              Action: [cloudwatch:GetMetricStatistics]
+              Resource: '*'
+            - Effect: Allow
+              Action: [sns:Publish]
+              Resource: !Ref AlertTopic
+      Events:
+        Poll:
+          Type: Schedule
+          Properties:
+            Schedule: rate(5 minutes)
+            Description: Poll metrics for circuit breaker thresholds
+        AlarmInvoke:
+          Type: SNS
+          Properties:
+            Topic: !Ref AlarmTopic
+
+  # ---- HTTP API ----
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: !Ref EnvironmentName
+      Auth:
+        DefaultAuthorizer: CognitoJwt
+        Authorizers:
+          CognitoJwt:
+            JwtConfiguration:
+              issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}
+              audience:
+                - !Ref UserPoolClient
+            IdentitySource: $request.header.Authorization
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 100
+        ThrottlingRateLimit: 50
+
+  # ---- Step Functions ----
+  SyncStateMachine:
+    Type: AWS::Serverless::StateMachine
+    Properties:
+      Name: !Sub g2g-${EnvironmentName}-sync
+      Type: STANDARD
+      Definition:
+        Comment: Glooko-to-Gluroo test/sync workflow (zero retries)
+        StartAt: LoadConfig
+        States:
+          LoadConfig:
+            Type: Pass
+            Parameters:
+              bridgeId.$: $.bridgeId
+              runId.$: $.runId
+              mode.$: $.mode
+              step: LoadConfig
+            Next: RunSync
+          RunSync:
+            Type: Task
+            Resource: !GetAtt SyncWorkerFunction.Arn
+            TimeoutSeconds: 120
+            Parameters:
+              bridgeId.$: $.bridgeId
+              runId.$: $.runId
+              mode.$: $.mode
+              step: RunSync
+            Retry: []
+            Catch:
+              - ErrorEquals: [States.ALL]
+                ResultPath: $.error
+                Next: FailRun
+            Next: SucceedRun
+          SucceedRun:
+            Type: Succeed
+          FailRun:
+            Type: Fail
+            Error: SyncFailed
+            Cause: Sync worker reported failure
+      Policies:
+        - LambdaInvokePolicy:
+            FunctionName: !Ref SyncWorkerFunction
+
+  # ---- CloudWatch Alarms ----
+  LambdaInvocationsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub g2g-${EnvironmentName}-lambda-invocations
+      AlarmDescription: Trip circuit breaker when Lambda invocations spike
+      Namespace: AWS/Lambda
+      MetricName: Invocations
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 2000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmTopic
+        - !Ref AlertTopic
+
+  StatesStartedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub g2g-${EnvironmentName}-sfn-starts
+      Namespace: AWS/States
+      MetricName: ExecutionsStarted
+      Dimensions:
+        - Name: StateMachineArn
+          Value: !Ref SyncStateMachine
+      Statistic: Sum
+      Period: 3600
+      EvaluationPeriods: 1
+      Threshold: 1000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmTopic
+        - !Ref AlertTopic
+
+  DailyLambdaAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub g2g-${EnvironmentName}-lambda-daily
+      Namespace: AWS/Lambda
+      MetricName: Invocations
+      Statistic: Sum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: 10000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlarmTopic
+        - !Ref AlertTopic
+
+  # ---- Budget ----
+  MonthlyBudget:
+    Type: AWS::Budgets::Budget
+    Condition: HasAlertEmail
+    Properties:
+      Budget:
+        BudgetName: !Sub g2g-${EnvironmentName}-monthly
+        BudgetType: COST
+        TimeUnit: MONTHLY
+        BudgetLimit:
+          Amount: !Ref MonthlyBudgetUsd
+          Unit: USD
+      NotificationsWithSubscribers:
+        - Notification:
+            NotificationType: ACTUAL
+            ComparisonOperator: GREATER_THAN
+            Threshold: 80
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail
+        - Notification:
+            NotificationType: FORECASTED
+            ComparisonOperator: GREATER_THAN
+            Threshold: 100
+            ThresholdType: PERCENTAGE
+          Subscribers:
+            - SubscriptionType: EMAIL
+              Address: !Ref AlertEmail
+
+Outputs:
+  ApiUrl:
+    Description: HTTP API base URL
+    Value: !Sub https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/${EnvironmentName}
+  UserPoolId:
+    Value: !Ref UserPool
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+  StateMachineArn:
+    Value: !Ref SyncStateMachine
+  AlertTopicArn:
+    Value: !Ref AlertTopic
+  Region:
+    Value: !Ref AWS::Region

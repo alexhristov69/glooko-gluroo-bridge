@@ -1,0 +1,5 @@
+# Optional cloud sync settings — copy values from `sam deploy` stack outputs
+# g2g.apiBaseUrl=https://xxxx.execute-api.us-east-1.amazonaws.com/prod
+# g2g.cognitoRegion=us-east-1
+# g2g.cognitoClientId=
+# g2g.useCloudSync=true

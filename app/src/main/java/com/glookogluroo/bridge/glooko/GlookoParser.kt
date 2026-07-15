@@ -11,18 +11,22 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.time.Instant
 import java.time.LocalDateTime
-import java.time.ZoneOffset
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.time.format.DateTimeFormatterBuilder
-import java.time.temporal.ChronoField
 
 object GlookoParser {
     private val json = Json { ignoreUnknownKeys = true }
 
-    fun parseTimestamp(value: JsonElement?): Instant? {
+    private val glookoLocalDateTimeFormatters = listOf(
+        DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS"),
+        DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss"),
+        DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
+    )
+
+    fun parseTimestamp(value: JsonElement?, zone: ZoneId = ZoneId.systemDefault()): Instant? {
         if (value == null) return null
         return when {
-            value.jsonPrimitive.isString -> parseTimestampString(value.jsonPrimitive.content)
+            value.jsonPrimitive.isString -> parseTimestampString(value.jsonPrimitive.content, zone)
             value.jsonPrimitive.content.toDoubleOrNull() != null -> {
                 val epoch = value.jsonPrimitive.double
                 if (epoch > 1e12) Instant.ofEpochMilli(epoch.toLong())
@@ -32,41 +36,40 @@ object GlookoParser {
         }
     }
 
-    fun parseTimestamp(value: String?): Instant? {
+    fun parseTimestamp(value: String?, zone: ZoneId = ZoneId.systemDefault()): Instant? {
         if (value.isNullOrBlank()) return null
-        return parseTimestampString(value)
+        return parseTimestampString(value, zone)
     }
 
-    private fun parseTimestampString(value: String): Instant? {
-        val formatters = listOf(
-            DateTimeFormatter.ISO_INSTANT,
-            DateTimeFormatterBuilder()
-                .appendPattern("yyyy-MM-dd'T'HH:mm:ss")
-                .optionalStart()
-                .appendFraction(ChronoField.NANO_OF_SECOND, 0, 9, true)
-                .optionalEnd()
-                .appendLiteral('Z')
-                .toFormatter()
-                .withZone(ZoneOffset.UTC),
-            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneOffset.UTC),
-        )
-
-        for (formatter in formatters) {
-            runCatching {
-                return Instant.from(formatter.parse(value))
+    private fun parseTimestampString(value: String, zone: ZoneId): Instant? {
+        // Glooko pump graph timestamps are local wall-clock times with a literal "Z" suffix,
+        // not true UTC. Match glooko-reader's naive-datetime parsing, then apply the account zone.
+        if (value.endsWith("Z", ignoreCase = true)) {
+            parseLocalDateTime(value.dropLast(1).trim())?.let { local ->
+                return local.atZone(zone).toInstant()
             }
         }
 
-        runCatching {
-            val normalized = if (value.endsWith("Z")) value else "${value}Z"
-            return Instant.parse(normalized)
+        parseLocalDateTime(value)?.let { local ->
+            return local.atZone(zone).toInstant()
         }
 
+        runCatching {
+            return Instant.parse(value)
+        }
+
+        return null
+    }
+
+    private fun parseLocalDateTime(value: String): LocalDateTime? {
+        for (formatter in glookoLocalDateTimeFormatters) {
+            runCatching {
+                return LocalDateTime.parse(value, formatter)
+            }
+        }
         runCatching {
             return LocalDateTime.parse(value, DateTimeFormatter.ISO_LOCAL_DATE_TIME)
-                .toInstant(ZoneOffset.UTC)
         }
-
         return null
     }
 

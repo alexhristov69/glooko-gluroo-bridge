@@ -15,7 +15,9 @@ data class AppSettings(
     val useTokenAuth: Boolean = false,
     val syncEnabled: Boolean = false,
     val backfillDays: Int = 7,
+    val syncFromOverride: String = "",
     val postPumpModeNotes: Boolean = true,
+    val jitterInsulinTimestamps: Boolean = false,
     val syncIntervalMinutes: Int = 15,
 )
 
@@ -44,7 +46,9 @@ class SettingsRepository @Inject constructor(
             useTokenAuth = prefs.getBoolean(KEY_USE_TOKEN_AUTH, false),
             syncEnabled = prefs.getBoolean(KEY_SYNC_ENABLED, false),
             backfillDays = prefs.getInt(KEY_BACKFILL_DAYS, 7),
+            syncFromOverride = prefs.getString(KEY_SYNC_FROM_OVERRIDE, "").orEmpty(),
             postPumpModeNotes = prefs.getBoolean(KEY_POST_PUMP_MODE_NOTES, true),
+            jitterInsulinTimestamps = prefs.getBoolean(KEY_JITTER_INSULIN_TIMESTAMPS, false),
             syncIntervalMinutes = prefs.getInt(KEY_SYNC_INTERVAL_MINUTES, 15),
         )
     }
@@ -58,8 +62,10 @@ class SettingsRepository @Inject constructor(
             .putBoolean(KEY_USE_TOKEN_AUTH, settings.useTokenAuth)
             .putBoolean(KEY_SYNC_ENABLED, settings.syncEnabled)
             .putInt(KEY_BACKFILL_DAYS, settings.backfillDays.coerceIn(1, 30))
+            .putString(KEY_SYNC_FROM_OVERRIDE, settings.syncFromOverride.trim())
             .putBoolean(KEY_POST_PUMP_MODE_NOTES, settings.postPumpModeNotes)
-            .putInt(KEY_SYNC_INTERVAL_MINUTES, settings.syncIntervalMinutes.coerceIn(15, 240))
+            .putBoolean(KEY_JITTER_INSULIN_TIMESTAMPS, settings.jitterInsulinTimestamps)
+            .putInt(KEY_SYNC_INTERVAL_MINUTES, settings.syncIntervalMinutes.coerceIn(1, 240))
             .apply()
     }
 
@@ -80,7 +86,9 @@ class SettingsRepository @Inject constructor(
         private const val KEY_USE_TOKEN_AUTH = "use_token_auth"
         private const val KEY_SYNC_ENABLED = "sync_enabled"
         private const val KEY_BACKFILL_DAYS = "backfill_days"
+        private const val KEY_SYNC_FROM_OVERRIDE = "sync_from_override"
         private const val KEY_POST_PUMP_MODE_NOTES = "post_pump_mode_notes"
+        private const val KEY_JITTER_INSULIN_TIMESTAMPS = "jitter_insulin_timestamps"
         private const val KEY_SYNC_INTERVAL_MINUTES = "sync_interval_minutes"
     }
 }

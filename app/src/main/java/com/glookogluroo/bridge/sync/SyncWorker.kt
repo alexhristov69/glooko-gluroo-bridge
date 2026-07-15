@@ -22,11 +22,15 @@ class SyncWorker @AssistedInject constructor(
             return Result.success()
         }
 
-        val syncResult = syncRepository.runSync()
-        return if (syncResult.success) {
-            Result.success()
-        } else {
-            Result.retry()
+        val syncResult = syncRepository.runSync(settings)
+        if (!settingsRepository.getSettings().syncEnabled) {
+            return Result.success()
         }
+        if (!syncResult.success) {
+            return Result.retry()
+        }
+
+        syncRepository.rescheduleBackgroundSync()
+        return Result.success()
     }
 }

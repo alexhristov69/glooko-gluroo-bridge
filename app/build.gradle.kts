@@ -19,6 +19,31 @@ android {
         versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Override via gradle.properties after SAM deploy:
+        // g2g.apiBaseUrl=https://....amazonaws.com/prod
+        // g2g.cognitoClientId=...
+        // g2g.cognitoRegion=us-east-1
+        buildConfigField(
+            "String",
+            "API_BASE_URL",
+            "\"${project.findProperty("g2g.apiBaseUrl") ?: ""}\"",
+        )
+        buildConfigField(
+            "String",
+            "COGNITO_REGION",
+            "\"${project.findProperty("g2g.cognitoRegion") ?: "us-east-1"}\"",
+        )
+        buildConfigField(
+            "String",
+            "COGNITO_CLIENT_ID",
+            "\"${project.findProperty("g2g.cognitoClientId") ?: ""}\"",
+        )
+        buildConfigField(
+            "Boolean",
+            "USE_CLOUD_SYNC",
+            "${project.findProperty("g2g.useCloudSync") ?: "true"}",
+        )
     }
 
     buildTypes {
@@ -42,6 +67,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     packaging {
