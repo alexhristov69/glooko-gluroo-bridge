@@ -65,6 +65,11 @@ fun MainScreen(viewModel: MainViewModel) {
                 .verticalScroll(scrollState),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            if (uiState.cloudEnabled && uiState.isBootstrapping) {
+                StartupScreen(message = uiState.bootstrapMessage ?: "Starting…")
+                return@Column
+            }
+
             Text(
                 text = "Sync insulin and pump data from Glooko to Gluroo via Nightscout (GGC). CGM is not uploaded.",
                 style = MaterialTheme.typography.bodyMedium,

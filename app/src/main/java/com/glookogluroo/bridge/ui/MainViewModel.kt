@@ -38,6 +38,9 @@ data class MainUiState(
     val authEmail: String? = null,
     val cloudEnabled: Boolean = false,
     val cloudPausedBanner: String? = null,
+    /** True while restoring a saved cloud session on cold start. */
+    val isBootstrapping: Boolean = false,
+    val bootstrapMessage: String? = null,
 )
 
 @HiltViewModel
@@ -48,7 +51,7 @@ class MainViewModel @Inject constructor(
     private val authRepository: CognitoAuthRepository,
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(MainUiState(cloudEnabled = CloudConfig.enabled))
+    private val _uiState = MutableStateFlow(createInitialUiState())
     val uiState: StateFlow<MainUiState> = _uiState.asStateFlow()
 
     init {
@@ -62,39 +65,106 @@ class MainViewModel @Inject constructor(
         }
     }
 
+    private fun createInitialUiState(): MainUiState {
+        val cloudEnabled = CloudConfig.enabled
+        val hasStoredAuth = cloudEnabled && authRepository.isSignedIn()
+        return MainUiState(
+            cloudEnabled = cloudEnabled,
+            isBootstrapping = hasStoredAuth,
+            bootstrapMessage = if (hasStoredAuth) "Restoring session…" else null,
+            authEmail = authRepository.getCachedSession()?.email,
+        )
+    }
+
+    private fun setBootstrapMessage(message: String) {
+        _uiState.update { it.copy(isBootstrapping = true, bootstrapMessage = message) }
+    }
+
     private fun load() {
         viewModelScope.launch {
-            val settings = settingsRepository.getSettings()
-            val session = authRepository.getCachedSession()
-            val signedIn = session != null
-            // Local WorkManager only when cloud is disabled
-            if (!CloudConfig.enabled && settings.syncEnabled) {
-                syncRepository.scheduleBackgroundSync(settings.syncIntervalMinutes)
-            } else {
-                syncRepository.cancelBackgroundSync()
-            }
-            var syncState = if (CloudConfig.enabled && signedIn) {
-                runCatching { cloudSyncRepository.getSyncState() }.getOrElse { SyncState() }
-            } else {
-                syncRepository.getSyncState()
-            }
-            var mergedSettings = settings
-            if (CloudConfig.enabled && signedIn) {
-                cloudSyncRepository.hydrateSettingsFromCloud()?.let { mergedSettings = it }
-            }
-            val banner = if (CloudConfig.enabled && signedIn) {
-                cloudSyncRepository.cloudStatusBanner()
-            } else {
-                null
-            }
-            _uiState.update {
-                it.copy(
-                    settings = mergedSettings,
-                    syncState = syncState,
-                    signedIn = signedIn || !CloudConfig.enabled,
-                    authEmail = session?.email,
-                    cloudPausedBanner = banner,
-                )
+            val bootstrapping = _uiState.value.isBootstrapping
+            try {
+                if (bootstrapping) {
+                    setBootstrapMessage("Restoring session…")
+                }
+                val settings = settingsRepository.getSettings()
+                var session = authRepository.getCachedSession()
+                var signedIn = session != null
+
+                if (CloudConfig.enabled && bootstrapping) {
+                    setBootstrapMessage("Refreshing sign-in…")
+                    session = authRepository.refreshIfNeeded()
+                    signedIn = session != null
+                    if (!signedIn) {
+                        authRepository.signOut()
+                        _uiState.update {
+                            it.copy(
+                                settings = settings,
+                                isBootstrapping = false,
+                                bootstrapMessage = null,
+                                signedIn = false,
+                                authEmail = null,
+                                error = "Session expired — please sign in again",
+                            )
+                        }
+                        return@launch
+                    }
+                }
+
+                // Local WorkManager only when cloud is disabled
+                if (!CloudConfig.enabled && settings.syncEnabled) {
+                    syncRepository.scheduleBackgroundSync(settings.syncIntervalMinutes)
+                } else {
+                    syncRepository.cancelBackgroundSync()
+                }
+
+                var syncState = SyncState()
+                var mergedSettings = settings
+                var banner: String? = null
+
+                if (CloudConfig.enabled && signedIn) {
+                    if (bootstrapping) {
+                        setBootstrapMessage("Loading sync status…")
+                    }
+                    syncState = runCatching { cloudSyncRepository.getSyncState() }
+                        .getOrElse { SyncState() }
+                    if (bootstrapping) {
+                        setBootstrapMessage("Loading settings…")
+                    }
+                    cloudSyncRepository.hydrateSettingsFromCloud()?.let { mergedSettings = it }
+                    banner = cloudSyncRepository.cloudStatusBanner()
+                } else if (!CloudConfig.enabled) {
+                    syncState = syncRepository.getSyncState()
+                }
+
+                _uiState.update {
+                    it.copy(
+                        settings = mergedSettings,
+                        syncState = syncState,
+                        signedIn = signedIn || !CloudConfig.enabled,
+                        authEmail = session?.email,
+                        cloudPausedBanner = banner,
+                        isBootstrapping = false,
+                        bootstrapMessage = null,
+                    )
+                }
+            } catch (e: Exception) {
+                _uiState.update {
+                    it.copy(
+                        isBootstrapping = false,
+                        bootstrapMessage = null,
+                        signedIn = if (CloudConfig.enabled) {
+                            authRepository.isSignedIn()
+                        } else {
+                            true
+                        },
+                        error = if (bootstrapping) {
+                            e.message ?: "Could not connect to AWS"
+                        } else {
+                            it.error
+                        },
+                    )
+                }
             }
         }
     }

@@ -180,6 +180,9 @@ Resources:
     Type: AWS::SNS::Topic
     Properties:
       TopicName: !Sub g2g-${EnvironmentName}-alerts
+      Tags:
+        - Key: Project
+          Value: g2g-bridge
 
   AlarmTopic:
     Type: AWS::SNS::Topic
