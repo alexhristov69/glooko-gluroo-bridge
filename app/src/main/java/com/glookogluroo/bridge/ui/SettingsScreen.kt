@@ -30,8 +30,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import com.glookogluroo.bridge.sync.SyncPreview
 import com.glookogluroo.bridge.sync.SyncWindowResolver
 import kotlinx.coroutines.delay
@@ -90,25 +88,12 @@ fun SettingsTab(uiState: MainUiState, viewModel: MainViewModel) {
                 shape = fieldShape,
                 colors = fieldColors,
             )
-            OutlinedTextField(
+            RelaySecretField(
                 value = uiState.settings.glookoPassword,
                 onValueChange = viewModel::updateGlookoPassword,
-                label = { Text("Glooko password") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                visualTransformation = if (glookoPasswordVisible) {
-                    VisualTransformation.None
-                } else {
-                    PasswordVisualTransformation()
-                },
-                trailingIcon = {
-                    RelayTextButton(
-                        text = if (glookoPasswordVisible) "Hide" else "Show",
-                        onClick = { glookoPasswordVisible = !glookoPasswordVisible },
-                    )
-                },
-                shape = fieldShape,
-                colors = fieldColors,
+                label = "Glooko password",
+                visible = glookoPasswordVisible,
+                onVisibilityChange = { glookoPasswordVisible = it },
             )
         }
 
@@ -123,25 +108,12 @@ fun SettingsTab(uiState: MainUiState, viewModel: MainViewModel) {
                 shape = fieldShape,
                 colors = fieldColors,
             )
-            OutlinedTextField(
+            RelaySecretField(
                 value = uiState.settings.nightscoutSecret,
                 onValueChange = viewModel::updateNightscoutSecret,
-                label = { Text("API secret / token") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
-                visualTransformation = if (nightscoutSecretVisible) {
-                    VisualTransformation.None
-                } else {
-                    PasswordVisualTransformation()
-                },
-                trailingIcon = {
-                    RelayTextButton(
-                        text = if (nightscoutSecretVisible) "Hide" else "Show",
-                        onClick = { nightscoutSecretVisible = !nightscoutSecretVisible },
-                    )
-                },
-                shape = fieldShape,
-                colors = fieldColors,
+                label = "API secret / token",
+                visible = nightscoutSecretVisible,
+                onVisibilityChange = { nightscoutSecretVisible = it },
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),

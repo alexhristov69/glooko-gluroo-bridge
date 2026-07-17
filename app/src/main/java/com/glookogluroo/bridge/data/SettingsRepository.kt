@@ -57,24 +57,30 @@ class SettingsRepository @Inject constructor(
         )
     }
 
-    fun saveSettings(settings: AppSettings) {
+    fun saveSettings(settings: AppSettings): AppSettings {
+        val existing = getSettings()
+        val resolved = settings.copy(
+            glookoPassword = settings.glookoPassword.ifBlank { existing.glookoPassword },
+            nightscoutSecret = settings.nightscoutSecret.ifBlank { existing.nightscoutSecret },
+        )
         prefs.edit()
-            .putString(KEY_GLOOKO_EMAIL, settings.glookoEmail.trim())
-            .putString(KEY_GLOOKO_PASSWORD, settings.glookoPassword)
-            .putString(KEY_NIGHTSCOUT_URL, settings.nightscoutUrl.trim().trimEnd('/'))
-            .putString(KEY_NIGHTSCOUT_SECRET, settings.nightscoutSecret.trim())
-            .putBoolean(KEY_USE_TOKEN_AUTH, settings.useTokenAuth)
-            .putBoolean(KEY_SYNC_ENABLED, settings.syncEnabled)
-            .putInt(KEY_BACKFILL_DAYS, settings.backfillDays.coerceIn(1, 30))
-            .putString(KEY_SYNC_FROM_OVERRIDE, settings.syncFromOverride.trim())
-            .putBoolean(KEY_POST_PUMP_MODE_NOTES, settings.postPumpModeNotes)
-            .putBoolean(KEY_JITTER_INSULIN_TIMESTAMPS, settings.jitterInsulinTimestamps)
-            .putInt(KEY_SYNC_INTERVAL_MINUTES, settings.syncIntervalMinutes.coerceIn(1, 240))
+            .putString(KEY_GLOOKO_EMAIL, resolved.glookoEmail.trim())
+            .putString(KEY_GLOOKO_PASSWORD, resolved.glookoPassword)
+            .putString(KEY_NIGHTSCOUT_URL, resolved.nightscoutUrl.trim().trimEnd('/'))
+            .putString(KEY_NIGHTSCOUT_SECRET, resolved.nightscoutSecret.trim())
+            .putBoolean(KEY_USE_TOKEN_AUTH, resolved.useTokenAuth)
+            .putBoolean(KEY_SYNC_ENABLED, resolved.syncEnabled)
+            .putInt(KEY_BACKFILL_DAYS, resolved.backfillDays.coerceIn(1, 30))
+            .putString(KEY_SYNC_FROM_OVERRIDE, resolved.syncFromOverride.trim())
+            .putBoolean(KEY_POST_PUMP_MODE_NOTES, resolved.postPumpModeNotes)
+            .putBoolean(KEY_JITTER_INSULIN_TIMESTAMPS, resolved.jitterInsulinTimestamps)
+            .putInt(KEY_SYNC_INTERVAL_MINUTES, resolved.syncIntervalMinutes.coerceIn(1, 240))
             .putString(
                 KEY_TIMEZONE,
-                settings.timezone.ifBlank { java.time.ZoneId.systemDefault().id },
+                resolved.timezone.ifBlank { java.time.ZoneId.systemDefault().id },
             )
             .apply()
+        return resolved
     }
 
     fun isConfigured(): Boolean {

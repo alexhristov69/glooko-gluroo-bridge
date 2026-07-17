@@ -57,9 +57,9 @@ private fun runningSteps(run: SyncRunSummary, step4Label: String): List<RelayJou
     }
     return listOf(
         step("Start relay", "In progress", indexState(0, activeIndex)),
-        step("Connect Glooko", indexState(1, activeIndex)),
-        step("Fetch events", indexState(2, activeIndex)),
-        step(step4Label, indexState(3, activeIndex)),
+        step("Connect Glooko", state = indexState(1, activeIndex)),
+        step("Fetch events", state = indexState(2, activeIndex)),
+        step(step4Label, state = indexState(3, activeIndex)),
     )
 }
 

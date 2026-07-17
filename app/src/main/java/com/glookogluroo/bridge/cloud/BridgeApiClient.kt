@@ -47,6 +47,8 @@ class BridgeApiClient @Inject constructor(
 
     suspend fun getStatus(): JsonObject = request("GET", "/status")
 
+    suspend fun getSettingsCredentials(): JsonObject = request("GET", "/settings/credentials")
+
     suspend fun resetSync(): JsonObject = request("POST", "/admin/reset-sync")
 
     suspend fun clearHistory(): JsonObject = request("POST", "/admin/clear-history")

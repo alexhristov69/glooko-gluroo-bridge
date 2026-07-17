@@ -191,7 +191,7 @@ class MainViewModel @Inject constructor(
                     if (bootstrapping) {
                         setBootstrapMessage("Loading settings…")
                     }
-                    cloudSyncRepository.hydrateSettingsFromCloud()?.let { mergedSettings = it }
+                    cloudSyncRepository.hydrateSettingsFromCloud(settings)?.let { mergedSettings = it }
                     banner = cloudSyncRepository.cloudStatusBanner()
                 } else if (!CloudConfig.enabled) {
                     syncState = syncRepository.getSyncState()
@@ -236,8 +236,22 @@ class MainViewModel @Inject constructor(
 
     fun selectTab(tab: AppTab) {
         _uiState.update { it.copy(selectedTab = tab, message = null, error = null) }
+        if (tab == AppTab.Settings && CloudConfig.enabled && _uiState.value.signedIn) {
+            refreshSettingsSecrets()
+        }
         if (tab != AppTab.Settings && CloudConfig.enabled && _uiState.value.signedIn) {
             refreshStats()
+        }
+    }
+
+    fun refreshSettingsSecrets() {
+        if (!CloudConfig.enabled || !_uiState.value.signedIn) return
+        viewModelScope.launch {
+            val local = settingsRepository.getSettings()
+            val merged = runCatching {
+                cloudSyncRepository.hydrateSettingsFromCloud(local)
+            }.getOrNull() ?: return@launch
+            _uiState.update { it.copy(settings = merged) }
         }
     }
 
@@ -660,15 +674,15 @@ class MainViewModel @Inject constructor(
             val settings = _uiState.value.settings
             _uiState.update { it.copy(isBusy = true, error = null, settingsValidationError = null) }
             try {
-                if (CloudConfig.enabled) {
+                val resolved = if (CloudConfig.enabled) {
                     cloudSyncRepository.saveSettings(settings)
                 } else {
                     settingsRepository.saveSettings(settings)
-                    if (settings.syncEnabled) {
-                        syncRepository.scheduleBackgroundSync(settings.syncIntervalMinutes)
-                    } else {
-                        syncRepository.cancelBackgroundSync()
-                    }
+                }
+                if (!CloudConfig.enabled && resolved.syncEnabled) {
+                    syncRepository.scheduleBackgroundSync(resolved.syncIntervalMinutes)
+                } else if (!CloudConfig.enabled) {
+                    syncRepository.cancelBackgroundSync()
                 }
                 val syncState = if (CloudConfig.enabled) {
                     cloudSyncRepository.getSyncState()
@@ -678,6 +692,7 @@ class MainViewModel @Inject constructor(
                 _uiState.update {
                     it.copy(
                         isBusy = false,
+                        settings = resolved,
                         message = if (CloudConfig.enabled) {
                             "Settings saved to AWS"
                         } else {
@@ -685,8 +700,8 @@ class MainViewModel @Inject constructor(
                         },
                         error = null,
                         syncState = syncState,
-                        backfillDaysText = settings.backfillDays.toString(),
-                        syncIntervalMinutesText = settings.syncIntervalMinutes.toString(),
+                        backfillDaysText = resolved.backfillDays.toString(),
+                        syncIntervalMinutesText = resolved.syncIntervalMinutes.toString(),
                     )
                 }
             } catch (e: Exception) {

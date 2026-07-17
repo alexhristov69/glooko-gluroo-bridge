@@ -81,6 +81,24 @@ def load_credentials(bridge_id: str) -> dict[str, str]:
     return json.loads(resp["Parameter"]["Value"])
 
 
+def credentials_status(bridge_id: str) -> dict[str, bool]:
+    try:
+        creds = load_credentials(bridge_id)
+    except Exception:
+        return {
+            "credentialsConfigured": False,
+            "glookoPasswordConfigured": False,
+            "nightscoutSecretConfigured": False,
+        }
+    glooko = bool((creds.get("glookoPassword") or "").strip())
+    secret = bool((creds.get("nightscoutSecret") or "").strip())
+    return {
+        "credentialsConfigured": glooko and secret,
+        "glookoPasswordConfigured": glooko,
+        "nightscoutSecretConfigured": secret,
+    }
+
+
 def save_credentials(bridge_id: str, glooko_password: str, nightscout_secret: str) -> None:
     payload = json.dumps(
         {"glookoPassword": glooko_password, "nightscoutSecret": nightscout_secret}

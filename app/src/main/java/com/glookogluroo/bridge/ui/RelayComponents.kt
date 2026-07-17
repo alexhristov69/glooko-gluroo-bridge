@@ -24,17 +24,30 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import com.glookogluroo.bridge.cloud.SyncRunSummary
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.unit.dp
+import com.glookogluroo.bridge.cloud.SyncRunSummary
 
 enum class RelayRouteSegmentState {
     Healthy,
@@ -289,6 +302,80 @@ fun RelaySecondaryButton(
         contentPadding = PaddingValues(horizontal = RelayTokens.Space4),
     ) {
         Text(text, style = MaterialTheme.typography.labelLarge)
+    }
+}
+
+@Composable
+fun PasswordVisibilityIconButton(
+    visible: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    IconButton(
+        onClick = onToggle,
+        modifier = modifier,
+    ) {
+        Icon(
+            imageVector = if (visible) Icons.Filled.Visibility else Icons.Filled.VisibilityOff,
+            contentDescription = if (visible) "Hide password" else "Show password",
+            tint = MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
+/**
+ * Secret field that masks via [PasswordVisualTransformation] only.
+ *
+ * Avoids [KeyboardType.Password], which on many Android devices keeps the
+ * platform transformation active even after Compose sets [VisualTransformation.None].
+ */
+@Composable
+fun RelaySecretField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    label: String,
+    visible: Boolean,
+    onVisibilityChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    supportingText: String? = null,
+) {
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = MaterialTheme.colorScheme.primary,
+        unfocusedBorderColor = MaterialTheme.relayColors.borderSubtle,
+        cursorColor = MaterialTheme.colorScheme.primary,
+        errorBorderColor = MaterialTheme.colorScheme.error,
+    )
+    // Remount when visibility flips so the underlying EditText drops any sticky inputType mask.
+    key(visible) {
+        OutlinedTextField(
+            value = value,
+            onValueChange = onValueChange,
+            label = { Text(label) },
+            modifier = modifier.fillMaxWidth(),
+            enabled = enabled,
+            singleLine = true,
+            // Platform Default avoids downloadable-font flash; Password masking is Compose-only.
+            textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = FontFamily.Default),
+            keyboardOptions = KeyboardOptions(
+                keyboardType = KeyboardType.Ascii,
+                autoCorrectEnabled = false,
+            ),
+            visualTransformation = if (visible) {
+                VisualTransformation.None
+            } else {
+                PasswordVisualTransformation()
+            },
+            trailingIcon = {
+                PasswordVisibilityIconButton(
+                    visible = visible,
+                    onToggle = { onVisibilityChange(!visible) },
+                )
+            },
+            supportingText = supportingText?.let { { Text(it) } },
+            shape = RoundedCornerShape(RelayTokens.RadiusField),
+            colors = fieldColors,
+        )
     }
 }
 

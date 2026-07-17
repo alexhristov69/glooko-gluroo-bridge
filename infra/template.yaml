@@ -243,6 +243,14 @@ Resources:
             Method: PUT
             Auth:
               Authorizer: CognitoJwt
+        SettingsCredentialsGet:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /settings/credentials
+            Method: GET
+            Auth:
+              Authorizer: CognitoJwt
         RunsPost:
           Type: HttpApi
           Properties:

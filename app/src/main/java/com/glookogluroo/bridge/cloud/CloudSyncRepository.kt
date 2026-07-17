@@ -19,30 +19,34 @@ class CloudSyncRepository @Inject constructor(
     private val api: BridgeApiClient,
     private val settingsRepository: SettingsRepository,
 ) {
-    suspend fun saveSettings(settings: AppSettings) {
+    suspend fun saveSettings(settings: AppSettings): AppSettings {
         val withZone = settings.copy(
             timezone = settings.timezone.ifBlank {
                 java.time.ZoneId.systemDefault().id
             },
         )
+        val resolved = settingsRepository.saveSettings(withZone)
         api.putSettings(
             buildJsonObject {
-                put("glookoEmail", withZone.glookoEmail)
-                put("glookoPassword", withZone.glookoPassword)
-                put("nightscoutUrl", withZone.nightscoutUrl)
-                put("nightscoutSecret", withZone.nightscoutSecret)
-                put("useTokenAuth", withZone.useTokenAuth)
-                put("syncEnabled", withZone.syncEnabled)
-                put("backfillDays", withZone.backfillDays)
-                put("syncFromOverride", withZone.syncFromOverride)
-                put("postPumpModeNotes", withZone.postPumpModeNotes)
-                put("jitterInsulinTimestamps", withZone.jitterInsulinTimestamps)
-                put("syncIntervalMinutes", withZone.syncIntervalMinutes.coerceAtLeast(1))
-                put("timezone", withZone.timezone)
+                put("glookoEmail", resolved.glookoEmail)
+                put("nightscoutUrl", resolved.nightscoutUrl)
+                put("useTokenAuth", resolved.useTokenAuth)
+                put("syncEnabled", resolved.syncEnabled)
+                put("backfillDays", resolved.backfillDays)
+                put("syncFromOverride", resolved.syncFromOverride)
+                put("postPumpModeNotes", resolved.postPumpModeNotes)
+                put("jitterInsulinTimestamps", resolved.jitterInsulinTimestamps)
+                put("syncIntervalMinutes", resolved.syncIntervalMinutes.coerceAtLeast(1))
+                put("timezone", resolved.timezone)
+                if (resolved.glookoPassword.isNotBlank()) {
+                    put("glookoPassword", resolved.glookoPassword)
+                }
+                if (resolved.nightscoutSecret.isNotBlank()) {
+                    put("nightscoutSecret", resolved.nightscoutSecret)
+                }
             },
         )
-        // Keep non-secret settings locally for UI; secrets stay for edit-in-place
-        settingsRepository.saveSettings(withZone)
+        return resolved
     }
 
     suspend fun getSyncState(): SyncState {
@@ -56,11 +60,10 @@ class CloudSyncRepository @Inject constructor(
         )
     }
 
-    suspend fun hydrateSettingsFromCloud(): AppSettings? {
+    suspend fun hydrateSettingsFromCloud(local: AppSettings): AppSettings? {
         val status = runCatching { api.getStatus() }.getOrNull() ?: return null
         val bridge = status.obj("bridge") ?: return null
-        val local = settingsRepository.getSettings()
-        return local.copy(
+        var merged = local.copy(
             glookoEmail = bridge.string("glookoEmail", local.glookoEmail),
             nightscoutUrl = bridge.string("nightscoutUrl", local.nightscoutUrl),
             useTokenAuth = bridge.bool("useTokenAuth", local.useTokenAuth),
@@ -73,7 +76,27 @@ class CloudSyncRepository @Inject constructor(
             timezone = bridge.string("timezone", local.timezone).ifBlank {
                 java.time.ZoneId.systemDefault().id
             },
+            glookoPassword = local.glookoPassword,
+            nightscoutSecret = local.nightscoutSecret,
         )
+        val needsGlooko = merged.glookoPassword.isBlank() &&
+            bridge.bool("glookoPasswordConfigured")
+        val needsSecret = merged.nightscoutSecret.isBlank() &&
+            bridge.bool("nightscoutSecretConfigured")
+        if (needsGlooko || needsSecret) {
+            runCatching { api.getSettingsCredentials() }.getOrNull()?.let { creds ->
+                merged = merged.copy(
+                    glookoPassword = merged.glookoPassword.ifBlank {
+                        creds.string("glookoPassword")
+                    },
+                    nightscoutSecret = merged.nightscoutSecret.ifBlank {
+                        creds.string("nightscoutSecret")
+                    },
+                )
+                settingsRepository.saveSettings(merged)
+            }
+        }
+        return merged
     }
 
     suspend fun testConnections(settings: AppSettings): ConnectionTestResult {

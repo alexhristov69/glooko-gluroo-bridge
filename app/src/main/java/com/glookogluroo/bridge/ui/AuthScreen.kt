@@ -15,8 +15,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 
 @Composable
 fun AuthScreen(
@@ -61,26 +59,13 @@ fun AuthScreen(
                 shape = fieldShape,
                 colors = fieldColors,
             )
-            OutlinedTextField(
+            RelaySecretField(
                 value = password,
                 onValueChange = { password = it },
-                label = { Text("Password") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true,
+                label = "Password",
+                visible = passwordVisible,
+                onVisibilityChange = { passwordVisible = it },
                 enabled = !isBusy,
-                visualTransformation = if (passwordVisible) {
-                    VisualTransformation.None
-                } else {
-                    PasswordVisualTransformation()
-                },
-                trailingIcon = {
-                    RelayTextButton(
-                        text = if (passwordVisible) "Hide" else "Show",
-                        onClick = { passwordVisible = !passwordVisible },
-                    )
-                },
-                shape = fieldShape,
-                colors = fieldColors,
             )
             if (showConfirm) {
                 OutlinedTextField(
@@ -103,7 +88,6 @@ fun AuthScreen(
                 RelaySecondaryButton(
                     text = "Sign up",
                     onClick = {
-                        showConfirm = false
                         onSignUp(email, password)
                         showConfirm = true
                     },
@@ -113,16 +97,16 @@ fun AuthScreen(
                     RelayPrimaryButton(
                         text = "Confirm",
                         onClick = { onConfirm(email, code) },
-                        enabled = !isBusy && code.isNotBlank(),
+                        enabled = !isBusy && email.isNotBlank() && code.isNotBlank(),
                     )
                 }
             }
-            message?.let {
-                RelayBanner(message = it, tone = RelayBannerTone.Success)
-            }
-            error?.let {
-                RelayBanner(message = it, tone = RelayBannerTone.Error)
-            }
         }
+
+        if (isBusy) {
+            RelayBanner(message = "Working…", tone = RelayBannerTone.Info)
+        }
+        message?.let { RelayBanner(message = it, tone = RelayBannerTone.Success) }
+        error?.let { RelayBanner(message = it, tone = RelayBannerTone.Error) }
     }
 }

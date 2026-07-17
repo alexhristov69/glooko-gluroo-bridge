@@ -28,6 +28,8 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
 
         if method == "PUT" and path == "/settings":
             return put_settings(bridge_id, parse_body(event))
+        if method == "GET" and path == "/settings/credentials":
+            return get_settings_credentials(bridge_id)
         if method == "POST" and path == "/runs":
             return post_run(bridge_id, parse_body(event))
         if method == "GET" and path.startswith("/runs/"):
@@ -102,6 +104,20 @@ def put_settings(bridge_id: str, body: dict[str, Any]) -> dict[str, Any]:
     item = store.upsert_bridge_settings(bridge_id, body)
     public = {k: v for k, v in item.items() if k not in ("glookoPassword", "nightscoutSecret")}
     return response(200, {"settings": public})
+
+
+def get_settings_credentials(bridge_id: str) -> dict[str, Any]:
+    try:
+        creds = store.load_credentials(bridge_id)
+    except Exception:
+        return response(404, {"error": "Credentials not configured"})
+    return response(
+        200,
+        {
+            "glookoPassword": creds.get("glookoPassword", ""),
+            "nightscoutSecret": creds.get("nightscoutSecret", ""),
+        },
+    )
 
 
 def post_run(bridge_id: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -192,6 +208,7 @@ def get_status(bridge_id: str, event: dict[str, Any] | None = None) -> dict[str,
     current = next((r for r in runs if r.get("status") in ("QUEUED", "RUNNING")), None)
     last = next((r for r in runs if r.get("status") in ("SUCCEEDED", "FAILED")), None)
     cb = circuit_breaker_status(store.get_global_params())
+    creds = store.credentials_status(bridge_id)
     public_bridge = {
         "bridgeId": bridge.get("bridgeId") or bridge_id,
         "lastSuccessfulSyncEpochMs": bridge.get("lastSuccessfulSyncEpochMs", 0),
@@ -210,6 +227,7 @@ def get_status(bridge_id: str, event: dict[str, Any] | None = None) -> dict[str,
         "syncIntervalMinutes": bridge.get("syncIntervalMinutes", 15),
         "timezone": bridge.get("timezone") or "America/Los_Angeles",
         "updatedAt": bridge.get("updatedAt"),
+        **creds,
     }
     return response(
         200,
