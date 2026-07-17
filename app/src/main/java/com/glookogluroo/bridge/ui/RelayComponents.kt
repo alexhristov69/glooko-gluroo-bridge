@@ -33,6 +33,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.text.font.FontWeight
+import com.glookogluroo.bridge.cloud.SyncRunSummary
 import androidx.compose.ui.unit.dp
 
 enum class RelayRouteSegmentState {
@@ -327,6 +328,112 @@ fun RelaySafetyNote(modifier: Modifier = Modifier) {
         color = MaterialTheme.relayColors.textMuted,
         modifier = modifier.fillMaxWidth(),
     )
+}
+
+@Composable
+fun RelayJourneyTimeline(
+    run: SyncRunSummary,
+    modifier: Modifier = Modifier,
+) {
+    val steps = relayJourneySteps(run)
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(0.dp),
+    ) {
+        steps.forEachIndexed { index, step ->
+            JourneyTimelineRow(
+                step = step,
+                isLast = index == steps.lastIndex,
+            )
+        }
+    }
+}
+
+@Composable
+private fun JourneyTimelineRow(
+    step: RelayJourneyStep,
+    isLast: Boolean,
+) {
+    val nodeColor = when (step.state) {
+        RelayJourneyStepState.Complete -> MaterialTheme.relayColors.success
+        RelayJourneyStepState.Active -> MaterialTheme.colorScheme.primary
+        RelayJourneyStepState.Failed -> MaterialTheme.colorScheme.error
+        RelayJourneyStepState.Pending -> MaterialTheme.relayColors.borderSubtle
+    }
+    val labelColor = when (step.state) {
+        RelayJourneyStepState.Pending -> MaterialTheme.relayColors.textMuted
+        RelayJourneyStepState.Failed -> MaterialTheme.colorScheme.error
+        else -> MaterialTheme.colorScheme.onSurface
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(if (step.state == RelayJourneyStepState.Active) 14.dp else 12.dp)
+                    .background(nodeColor, CircleShape)
+                    .then(
+                        if (step.state == RelayJourneyStepState.Active) {
+                            Modifier.border(2.dp, MaterialTheme.colorScheme.primaryContainer, CircleShape)
+                        } else {
+                            Modifier
+                        },
+                    ),
+            )
+            if (!isLast) {
+                Box(
+                    modifier = Modifier
+                        .width(2.dp)
+                        .height(36.dp)
+                        .background(
+                            if (step.state == RelayJourneyStepState.Complete) {
+                                MaterialTheme.relayColors.success.copy(alpha = 0.4f)
+                            } else {
+                                MaterialTheme.relayColors.borderSubtle
+                            },
+                        ),
+                )
+            }
+        }
+        Spacer(modifier = Modifier.width(RelayTokens.Space3))
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(bottom = if (isLast) 0.dp else RelayTokens.Space2),
+        ) {
+            Text(
+                text = step.label,
+                style = MaterialTheme.typography.labelLarge,
+                color = labelColor,
+                fontWeight = if (step.state == RelayJourneyStepState.Active) {
+                    FontWeight.SemiBold
+                } else {
+                    FontWeight.Normal
+                },
+            )
+            step.detail?.let { detail ->
+                Text(
+                    text = detail,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.relayColors.textMuted,
+                )
+            }
+            Text(
+                text = when (step.state) {
+                    RelayJourneyStepState.Complete -> "Complete"
+                    RelayJourneyStepState.Active -> "In progress"
+                    RelayJourneyStepState.Failed -> "Needs attention"
+                    RelayJourneyStepState.Pending -> "Pending"
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = nodeColor,
+            )
+        }
+    }
 }
 
 @Composable

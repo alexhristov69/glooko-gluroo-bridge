@@ -15,6 +15,10 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
@@ -191,28 +195,36 @@ private fun SyncRunsCard(
         }
 
         selectedRun?.let { run ->
-            Text("Relay journey", style = MaterialTheme.typography.titleSmall)
-            StatLine("runId", run.runId)
-            StatLine("mode", run.mode)
-            StatLine("status", run.status)
-            StatLine("currentStep", run.currentStep)
-            StatLine("startedAt", formatRunDateTime(run.startedAt))
-            StatLine("completedAt", formatRunDateTime(run.completedAt).ifBlank { "(in progress / n/a)" })
-            StatLine("bolusesUploaded", run.bolusesUploaded.toString())
-            StatLine("pumpNoteUploaded", run.pumpNoteUploaded.toString())
-            run.glookoOk?.let { StatLine("glookoOk", it.toString()) }
-            run.nightscoutOk?.let { StatLine("nightscoutOk", it.toString()) }
-            StatLine("error", run.error ?: "(none)")
-            if (run.executionArn.isNotBlank()) {
-                StatLine("executionArn", run.executionArn)
-            }
-            run.diagnostics?.takeIf { it.isNotBlank() }?.let { diag ->
-                Text("Diagnostics", style = MaterialTheme.typography.labelMedium)
-                Text(
-                    text = diag,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                )
+            RelaySectionLabel("Relay journey")
+            RelayJourneyTimeline(run = run)
+            var expanded by remember(run.runId) { mutableStateOf(false) }
+            RelayTechnicalDisclosure(
+                title = "View technical details",
+                expanded = expanded,
+                onToggle = { expanded = !expanded },
+            ) {
+                StatLine("runId", run.runId)
+                StatLine("mode", run.mode)
+                StatLine("status", run.status)
+                StatLine("currentStep", run.currentStep)
+                StatLine("startedAt", formatRunDateTime(run.startedAt))
+                StatLine("completedAt", formatRunDateTime(run.completedAt).ifBlank { "(in progress / n/a)" })
+                StatLine("bolusesUploaded", run.bolusesUploaded.toString())
+                StatLine("pumpNoteUploaded", run.pumpNoteUploaded.toString())
+                run.glookoOk?.let { StatLine("glookoOk", it.toString()) }
+                run.nightscoutOk?.let { StatLine("nightscoutOk", it.toString()) }
+                StatLine("error", run.error ?: "(none)")
+                if (run.executionArn.isNotBlank()) {
+                    StatLine("executionArn", run.executionArn)
+                }
+                run.diagnostics?.takeIf { it.isNotBlank() }?.let { diag ->
+                    Text("Diagnostics", style = MaterialTheme.typography.labelMedium)
+                    Text(
+                        text = diag,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
             }
         }
 
