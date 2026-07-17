@@ -1,9 +1,11 @@
 package com.glookogluroo.bridge.ui
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -40,26 +42,8 @@ private val RobotoFlexFamily = FontFamily(
     Font(googleFont = RobotoFlex, fontProvider = GoogleFontsProvider, weight = FontWeight.Bold),
 )
 
-/**
- * Relay design language tokens (Design Language v1.0).
- */
+/** Layout tokens shared across light and dark Relay themes. */
 object RelayTokens {
-    val ColorPrimary = Color(0xFF0B7C78)
-    val ColorInfo = Color(0xFF3267D6)
-    val ColorSuccess = Color(0xFF247A52)
-    val ColorWarning = Color(0xFFB56912)
-    val ColorError = Color(0xFFB53B44)
-    val SurfaceCanvas = Color(0xFFF5F8F7)
-    val SurfaceRaised = Color(0xFFFFFFFF)
-    val TextInk = Color(0xFF10202A)
-    val TextMuted = Color(0xFF4A5C64)
-    val BorderSubtle = Color(0xFFD7E0DE)
-    val PrimaryContainer = Color(0xFFD5EDEB)
-    val SuccessContainer = Color(0xFFD8EEE4)
-    val WarningContainer = Color(0xFFF5E6D0)
-    val ErrorContainer = Color(0xFFF5D6D8)
-    val InfoContainer = Color(0xFFD9E4F8)
-
     val Space1 = 4.dp
     val Space2 = 8.dp
     val Space3 = 12.dp
@@ -76,44 +60,134 @@ object RelayTokens {
     val SideMargin = 16.dp
 }
 
+private object RelayLightPalette {
+    val primary = Color(0xFF0B7C78)
+    val info = Color(0xFF3267D6)
+    val success = Color(0xFF247A52)
+    val warning = Color(0xFFB56912)
+    val error = Color(0xFFB53B44)
+    val canvas = Color(0xFFF5F8F7)
+    val raised = Color(0xFFFFFFFF)
+    val ink = Color(0xFF10202A)
+    val muted = Color(0xFF4A5C64)
+    val border = Color(0xFFD7E0DE)
+    val primaryContainer = Color(0xFFD5EDEB)
+    val successContainer = Color(0xFFD8EEE4)
+    val warningContainer = Color(0xFFF5E6D0)
+    val errorContainer = Color(0xFFF5D6D8)
+    val infoContainer = Color(0xFFD9E4F8)
+    val onPrimary = Color.White
+    val onBrand = Color.White
+}
+
+/** Relay design language dark palette (Phase 2) — navy canvas matches launcher mark. */
+private object RelayDarkPalette {
+    val primary = Color(0xFF2EC4B6)
+    val info = Color(0xFF5B8DEF)
+    val success = Color(0xFF3FA872)
+    val warning = Color(0xFFD4953A)
+    val error = Color(0xFFD45A62)
+    val canvas = Color(0xFF051025)
+    val raised = Color(0xFF0C1A32)
+    val ink = Color(0xFFE6F2F0)
+    val muted = Color(0xFF8FA3AD)
+    val border = Color(0xFF243548)
+    val primaryContainer = Color(0xFF0F3D3A)
+    val successContainer = Color(0xFF123528)
+    val warningContainer = Color(0xFF3D2E14)
+    val errorContainer = Color(0xFF3D1A1E)
+    val infoContainer = Color(0xFF152A4D)
+    val onPrimary = Color(0xFF051025)
+    val onBrand = Color(0xFF051025)
+}
+
 data class RelayExtendedColors(
-    val info: Color = RelayTokens.ColorInfo,
-    val success: Color = RelayTokens.ColorSuccess,
-    val warning: Color = RelayTokens.ColorWarning,
-    val infoContainer: Color = RelayTokens.InfoContainer,
-    val successContainer: Color = RelayTokens.SuccessContainer,
-    val warningContainer: Color = RelayTokens.WarningContainer,
-    val borderSubtle: Color = RelayTokens.BorderSubtle,
-    val textMuted: Color = RelayTokens.TextMuted,
+    val info: Color,
+    val success: Color,
+    val warning: Color,
+    val infoContainer: Color,
+    val successContainer: Color,
+    val warningContainer: Color,
+    val borderSubtle: Color,
+    val textMuted: Color,
 )
 
-val LocalRelayColors = staticCompositionLocalOf { RelayExtendedColors() }
+private val RelayLightExtendedColors = RelayExtendedColors(
+    info = RelayLightPalette.info,
+    success = RelayLightPalette.success,
+    warning = RelayLightPalette.warning,
+    infoContainer = RelayLightPalette.infoContainer,
+    successContainer = RelayLightPalette.successContainer,
+    warningContainer = RelayLightPalette.warningContainer,
+    borderSubtle = RelayLightPalette.border,
+    textMuted = RelayLightPalette.muted,
+)
 
-private val RelayColorScheme = lightColorScheme(
-    primary = RelayTokens.ColorPrimary,
-    onPrimary = Color.White,
-    primaryContainer = RelayTokens.PrimaryContainer,
-    onPrimaryContainer = RelayTokens.TextInk,
-    secondary = RelayTokens.ColorInfo,
-    onSecondary = Color.White,
-    secondaryContainer = RelayTokens.InfoContainer,
-    onSecondaryContainer = RelayTokens.TextInk,
-    tertiary = RelayTokens.ColorSuccess,
-    onTertiary = Color.White,
-    tertiaryContainer = RelayTokens.SuccessContainer,
-    onTertiaryContainer = RelayTokens.TextInk,
-    error = RelayTokens.ColorError,
-    onError = Color.White,
-    errorContainer = RelayTokens.ErrorContainer,
-    onErrorContainer = RelayTokens.TextInk,
-    background = RelayTokens.SurfaceCanvas,
-    onBackground = RelayTokens.TextInk,
-    surface = RelayTokens.SurfaceRaised,
-    onSurface = RelayTokens.TextInk,
-    surfaceVariant = RelayTokens.PrimaryContainer,
-    onSurfaceVariant = RelayTokens.TextMuted,
-    outline = RelayTokens.BorderSubtle,
-    outlineVariant = RelayTokens.BorderSubtle,
+private val RelayDarkExtendedColors = RelayExtendedColors(
+    info = RelayDarkPalette.info,
+    success = RelayDarkPalette.success,
+    warning = RelayDarkPalette.warning,
+    infoContainer = RelayDarkPalette.infoContainer,
+    successContainer = RelayDarkPalette.successContainer,
+    warningContainer = RelayDarkPalette.warningContainer,
+    borderSubtle = RelayDarkPalette.border,
+    textMuted = RelayDarkPalette.muted,
+)
+
+val LocalRelayColors = staticCompositionLocalOf { RelayLightExtendedColors }
+
+private val RelayLightColorScheme = lightColorScheme(
+    primary = RelayLightPalette.primary,
+    onPrimary = RelayLightPalette.onPrimary,
+    primaryContainer = RelayLightPalette.primaryContainer,
+    onPrimaryContainer = RelayLightPalette.ink,
+    secondary = RelayLightPalette.info,
+    onSecondary = RelayLightPalette.onBrand,
+    secondaryContainer = RelayLightPalette.infoContainer,
+    onSecondaryContainer = RelayLightPalette.ink,
+    tertiary = RelayLightPalette.success,
+    onTertiary = RelayLightPalette.onBrand,
+    tertiaryContainer = RelayLightPalette.successContainer,
+    onTertiaryContainer = RelayLightPalette.ink,
+    error = RelayLightPalette.error,
+    onError = RelayLightPalette.onBrand,
+    errorContainer = RelayLightPalette.errorContainer,
+    onErrorContainer = RelayLightPalette.ink,
+    background = RelayLightPalette.canvas,
+    onBackground = RelayLightPalette.ink,
+    surface = RelayLightPalette.raised,
+    onSurface = RelayLightPalette.ink,
+    surfaceVariant = RelayLightPalette.primaryContainer,
+    onSurfaceVariant = RelayLightPalette.muted,
+    outline = RelayLightPalette.border,
+    outlineVariant = RelayLightPalette.border,
+)
+
+private val RelayDarkColorScheme = darkColorScheme(
+    primary = RelayDarkPalette.primary,
+    onPrimary = RelayDarkPalette.onPrimary,
+    primaryContainer = RelayDarkPalette.primaryContainer,
+    onPrimaryContainer = RelayDarkPalette.ink,
+    secondary = RelayDarkPalette.info,
+    onSecondary = RelayDarkPalette.onBrand,
+    secondaryContainer = RelayDarkPalette.infoContainer,
+    onSecondaryContainer = RelayDarkPalette.ink,
+    tertiary = RelayDarkPalette.success,
+    onTertiary = RelayDarkPalette.onBrand,
+    tertiaryContainer = RelayDarkPalette.successContainer,
+    onTertiaryContainer = RelayDarkPalette.ink,
+    error = RelayDarkPalette.error,
+    onError = RelayDarkPalette.onBrand,
+    errorContainer = RelayDarkPalette.errorContainer,
+    onErrorContainer = RelayDarkPalette.ink,
+    background = RelayDarkPalette.canvas,
+    onBackground = RelayDarkPalette.ink,
+    surface = RelayDarkPalette.raised,
+    onSurface = RelayDarkPalette.ink,
+    surfaceVariant = RelayDarkPalette.primaryContainer,
+    onSurfaceVariant = RelayDarkPalette.muted,
+    outline = RelayDarkPalette.border,
+    outlineVariant = RelayDarkPalette.border,
 )
 
 private val RelayTypography = Typography(
@@ -122,77 +196,66 @@ private val RelayTypography = Typography(
         fontWeight = FontWeight(650),
         fontSize = 32.sp,
         lineHeight = 40.sp,
-        color = RelayTokens.TextInk,
     ),
     headlineMedium = TextStyle(
         fontFamily = RobotoFlexFamily,
         fontWeight = FontWeight(650),
         fontSize = 24.sp,
         lineHeight = 32.sp,
-        color = RelayTokens.TextInk,
     ),
     titleLarge = TextStyle(
         fontFamily = RobotoFlexFamily,
         fontWeight = FontWeight(650),
         fontSize = 24.sp,
         lineHeight = 32.sp,
-        color = RelayTokens.TextInk,
     ),
     titleMedium = TextStyle(
         fontFamily = RobotoFlexFamily,
         fontWeight = FontWeight(600),
         fontSize = 18.sp,
         lineHeight = 24.sp,
-        color = RelayTokens.TextInk,
     ),
     titleSmall = TextStyle(
         fontFamily = RobotoFlexFamily,
         fontWeight = FontWeight(600),
         fontSize = 16.sp,
         lineHeight = 22.sp,
-        color = RelayTokens.TextInk,
     ),
     bodyLarge = TextStyle(
         fontFamily = RobotoFlexFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 16.sp,
         lineHeight = 24.sp,
-        color = RelayTokens.TextInk,
     ),
     bodyMedium = TextStyle(
         fontFamily = RobotoFlexFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 16.sp,
         lineHeight = 24.sp,
-        color = RelayTokens.TextInk,
     ),
     bodySmall = TextStyle(
         fontFamily = RobotoFlexFamily,
         fontWeight = FontWeight(450),
         fontSize = 12.sp,
         lineHeight = 16.sp,
-        color = RelayTokens.TextMuted,
     ),
     labelLarge = TextStyle(
         fontFamily = RobotoFlexFamily,
         fontWeight = FontWeight(550),
         fontSize = 14.sp,
         lineHeight = 20.sp,
-        color = RelayTokens.TextInk,
     ),
     labelMedium = TextStyle(
         fontFamily = RobotoFlexFamily,
         fontWeight = FontWeight(550),
         fontSize = 14.sp,
         lineHeight = 18.sp,
-        color = RelayTokens.TextInk,
     ),
     labelSmall = TextStyle(
         fontFamily = RobotoFlexFamily,
         fontWeight = FontWeight(450),
         fontSize = 12.sp,
         lineHeight = 16.sp,
-        color = RelayTokens.TextMuted,
     ),
 )
 
@@ -214,10 +277,16 @@ object RelaySpacing {
 }
 
 @Composable
-fun GlookoGlurooTheme(content: @Composable () -> Unit) {
-    CompositionLocalProvider(LocalRelayColors provides RelayExtendedColors()) {
+fun GlookoGlurooTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    content: @Composable () -> Unit,
+) {
+    val colorScheme = if (darkTheme) RelayDarkColorScheme else RelayLightColorScheme
+    val relayColors = if (darkTheme) RelayDarkExtendedColors else RelayLightExtendedColors
+
+    CompositionLocalProvider(LocalRelayColors provides relayColors) {
         MaterialTheme(
-            colorScheme = RelayColorScheme,
+            colorScheme = colorScheme,
             typography = RelayTypography,
             shapes = RelayShapes,
             content = content,

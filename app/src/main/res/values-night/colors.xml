@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="relay_primary">#2EC4B6</color>
+    <color name="relay_canvas">#051025</color>
+    <color name="relay_ink">#E6F2F0</color>
+    <color name="relay_border">#243548</color>
+</resources>

@@ -196,7 +196,7 @@ private fun RouteNode(color: Color, modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .background(color, CircleShape)
-            .border(2.dp, Color.White, CircleShape),
+            .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape),
     )
 }
 
