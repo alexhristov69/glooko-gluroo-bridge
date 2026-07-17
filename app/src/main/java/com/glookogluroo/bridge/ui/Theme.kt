@@ -12,13 +12,36 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.googlefonts.Font
+import androidx.compose.ui.text.googlefonts.GoogleFont
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.glookogluroo.bridge.R
+
+/**
+ * Roboto Flex loaded via the Compose Google Fonts provider.
+ * Falls back to the platform sans if GMS is unavailable.
+ */
+private val GoogleFontsProvider = GoogleFont.Provider(
+    providerAuthority = "com.google.android.gms.fonts",
+    providerPackage = "com.google.android.gms",
+    certificates = R.array.com_google_android_gms_fonts_certs,
+)
+
+private val RobotoFlex = GoogleFont("Roboto Flex")
+
+private val RobotoFlexFamily = FontFamily(
+    Font(googleFont = RobotoFlex, fontProvider = GoogleFontsProvider, weight = FontWeight.Normal),
+    Font(googleFont = RobotoFlex, fontProvider = GoogleFontsProvider, weight = FontWeight(450)),
+    Font(googleFont = RobotoFlex, fontProvider = GoogleFontsProvider, weight = FontWeight(550)),
+    Font(googleFont = RobotoFlex, fontProvider = GoogleFontsProvider, weight = FontWeight(600)),
+    Font(googleFont = RobotoFlex, fontProvider = GoogleFontsProvider, weight = FontWeight(650)),
+    Font(googleFont = RobotoFlex, fontProvider = GoogleFontsProvider, weight = FontWeight.Bold),
+)
 
 /**
  * Relay design language tokens (Design Language v1.0).
- * Roboto Flex is recommended; Android falls back to the platform humanist sans (Roboto).
  */
 object RelayTokens {
     val ColorPrimary = Color(0xFF0B7C78)
@@ -95,77 +118,77 @@ private val RelayColorScheme = lightColorScheme(
 
 private val RelayTypography = Typography(
     displayLarge = TextStyle(
-        fontFamily = FontFamily.SansSerif,
+        fontFamily = RobotoFlexFamily,
         fontWeight = FontWeight(650),
         fontSize = 32.sp,
         lineHeight = 40.sp,
         color = RelayTokens.TextInk,
     ),
     headlineMedium = TextStyle(
-        fontFamily = FontFamily.SansSerif,
+        fontFamily = RobotoFlexFamily,
         fontWeight = FontWeight(650),
         fontSize = 24.sp,
         lineHeight = 32.sp,
         color = RelayTokens.TextInk,
     ),
     titleLarge = TextStyle(
-        fontFamily = FontFamily.SansSerif,
+        fontFamily = RobotoFlexFamily,
         fontWeight = FontWeight(650),
         fontSize = 24.sp,
         lineHeight = 32.sp,
         color = RelayTokens.TextInk,
     ),
     titleMedium = TextStyle(
-        fontFamily = FontFamily.SansSerif,
+        fontFamily = RobotoFlexFamily,
         fontWeight = FontWeight(600),
         fontSize = 18.sp,
         lineHeight = 24.sp,
         color = RelayTokens.TextInk,
     ),
     titleSmall = TextStyle(
-        fontFamily = FontFamily.SansSerif,
+        fontFamily = RobotoFlexFamily,
         fontWeight = FontWeight(600),
         fontSize = 16.sp,
         lineHeight = 22.sp,
         color = RelayTokens.TextInk,
     ),
     bodyLarge = TextStyle(
-        fontFamily = FontFamily.SansSerif,
+        fontFamily = RobotoFlexFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 16.sp,
         lineHeight = 24.sp,
         color = RelayTokens.TextInk,
     ),
     bodyMedium = TextStyle(
-        fontFamily = FontFamily.SansSerif,
+        fontFamily = RobotoFlexFamily,
         fontWeight = FontWeight.Normal,
         fontSize = 16.sp,
         lineHeight = 24.sp,
         color = RelayTokens.TextInk,
     ),
     bodySmall = TextStyle(
-        fontFamily = FontFamily.SansSerif,
+        fontFamily = RobotoFlexFamily,
         fontWeight = FontWeight(450),
         fontSize = 12.sp,
         lineHeight = 16.sp,
         color = RelayTokens.TextMuted,
     ),
     labelLarge = TextStyle(
-        fontFamily = FontFamily.SansSerif,
+        fontFamily = RobotoFlexFamily,
         fontWeight = FontWeight(550),
         fontSize = 14.sp,
         lineHeight = 20.sp,
         color = RelayTokens.TextInk,
     ),
     labelMedium = TextStyle(
-        fontFamily = FontFamily.SansSerif,
+        fontFamily = RobotoFlexFamily,
         fontWeight = FontWeight(550),
         fontSize = 14.sp,
         lineHeight = 18.sp,
         color = RelayTokens.TextInk,
     ),
     labelSmall = TextStyle(
-        fontFamily = FontFamily.SansSerif,
+        fontFamily = RobotoFlexFamily,
         fontWeight = FontWeight(450),
         fontSize = 12.sp,
         lineHeight = 16.sp,
