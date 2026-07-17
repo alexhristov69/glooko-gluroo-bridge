@@ -46,7 +46,7 @@ data class MainUiState(
     /** True while restoring a saved cloud session on cold start. */
     val isBootstrapping: Boolean = false,
     val bootstrapMessage: String? = null,
-    val selectedTab: AppTab = AppTab.Stats,
+    val selectedTab: AppTab = AppTab.Status,
     val isAdmin: Boolean = false,
     val bridgeConfig: BridgeConfigSnapshot = BridgeConfigSnapshot(),
     val circuitBreaker: CircuitBreakerStatus = CircuitBreakerStatus(),
@@ -96,7 +96,8 @@ private val SyncRunSummary.hasSyncedRecords: Boolean
     get() = bolusesUploaded > 0 || pumpNoteUploaded
 
 enum class AppTab {
-    Stats,
+    Status,
+    Activity,
     Settings,
 }
 
@@ -235,7 +236,7 @@ class MainViewModel @Inject constructor(
 
     fun selectTab(tab: AppTab) {
         _uiState.update { it.copy(selectedTab = tab, message = null, error = null) }
-        if (tab == AppTab.Stats && CloudConfig.enabled && _uiState.value.signedIn) {
+        if (tab != AppTab.Settings && CloudConfig.enabled && _uiState.value.signedIn) {
             refreshStats()
         }
     }
@@ -553,7 +554,7 @@ class MainViewModel @Inject constructor(
                 signedIn = !CloudConfig.enabled,
                 authEmail = null,
                 message = "Signed out",
-                selectedTab = AppTab.Stats,
+                selectedTab = AppTab.Status,
                 recentRuns = emptyList(),
                 selectedRunId = null,
                 selectedRun = null,

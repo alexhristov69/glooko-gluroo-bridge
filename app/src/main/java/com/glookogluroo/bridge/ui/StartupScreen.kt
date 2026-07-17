@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -18,22 +17,32 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun StartupScreen(message: String) {
-    Card(modifier = Modifier.fillMaxWidth()) {
+    RelayCard {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(24.dp),
+                .padding(vertical = RelayTokens.Space4),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(RelayTokens.Space3),
         ) {
-            CircularProgressIndicator(modifier = Modifier.size(40.dp))
-            Text("Glooko Gluroo Bridge", style = MaterialTheme.typography.titleMedium)
+            RelayRoute(
+                sourceState = RelayRouteSegmentState.Idle,
+                relayState = RelayRouteSegmentState.Active,
+                destinationState = RelayRouteSegmentState.Idle,
+            )
+            CircularProgressIndicator(
+                modifier = Modifier.size(36.dp),
+                color = MaterialTheme.colorScheme.primary,
+                strokeWidth = 3.dp,
+            )
+            Text("Relay", style = MaterialTheme.typography.headlineMedium)
             Text(
                 text = message,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = MaterialTheme.relayColors.textMuted,
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(RelayTokens.Space1))
+            RelaySafetyNote()
         }
     }
 }

@@ -10,17 +10,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,12 +28,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.unit.dp
 import com.glookogluroo.bridge.sync.SyncPreview
 import com.glookogluroo.bridge.sync.SyncWindowResolver
 import kotlinx.coroutines.delay
@@ -44,16 +41,28 @@ fun SettingsTab(uiState: MainUiState, viewModel: MainViewModel) {
     var glookoPasswordVisible by remember { mutableStateOf(false) }
     var nightscoutSecretVisible by remember { mutableStateOf(false) }
 
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = MaterialTheme.colorScheme.primary,
+        unfocusedBorderColor = MaterialTheme.relayColors.borderSubtle,
+        cursorColor = MaterialTheme.colorScheme.primary,
+        errorBorderColor = MaterialTheme.colorScheme.error,
+    )
+    val fieldShape = RoundedCornerShape(RelayTokens.RadiusField)
+    val switchColors = SwitchDefaults.colors(
+        checkedTrackColor = MaterialTheme.colorScheme.primary,
+        checkedThumbColor = MaterialTheme.colorScheme.onPrimary,
+    )
+
     uiState.settingsValidationError?.let { message ->
         AlertDialog(
             onDismissRequest = viewModel::dismissValidationError,
-            title = { Text("Invalid settings") },
+            title = { Text("Check these settings") },
             text = { Text(message) },
             confirmButton = {
-                TextButton(onClick = viewModel::dismissValidationError) {
-                    Text("OK")
-                }
+                RelayTextButton(text = "OK", onClick = viewModel::dismissValidationError)
             },
+            shape = RoundedCornerShape(RelayTokens.RadiusCard),
+            containerColor = MaterialTheme.colorScheme.surface,
         )
     }
 
@@ -61,208 +70,220 @@ fun SettingsTab(uiState: MainUiState, viewModel: MainViewModel) {
         modifier = Modifier
             .fillMaxWidth()
             .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(RelayTokens.Space3),
     ) {
         Text(
-            text = "Sync insulin and pump data from Glooko to Gluroo via Nightscout (GGC). CGM is not uploaded.",
+            text = "Connect services and choose how often Relay should move events from Glooko to Gluroo.",
             style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.relayColors.textMuted,
         )
+        RelaySafetyNote()
 
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Glooko credentials", style = MaterialTheme.typography.titleMedium)
-                OutlinedTextField(
-                    value = uiState.settings.glookoEmail,
-                    onValueChange = viewModel::updateGlookoEmail,
-                    label = { Text("Glooko email") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = uiState.settings.glookoPassword,
-                    onValueChange = viewModel::updateGlookoPassword,
-                    label = { Text("Glooko password") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    visualTransformation = if (glookoPasswordVisible) {
-                        VisualTransformation.None
-                    } else {
-                        PasswordVisualTransformation()
-                    },
-                    trailingIcon = {
-                        TextButton(onClick = { glookoPasswordVisible = !glookoPasswordVisible }) {
-                            Text(if (glookoPasswordVisible) "Hide" else "Show")
-                        }
-                    },
-                )
-            }
-        }
-
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Gluroo Global Connect", style = MaterialTheme.typography.titleMedium)
-                OutlinedTextField(
-                    value = uiState.settings.nightscoutUrl,
-                    onValueChange = viewModel::updateNightscoutUrl,
-                    label = { Text("Nightscout URL") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                )
-                OutlinedTextField(
-                    value = uiState.settings.nightscoutSecret,
-                    onValueChange = viewModel::updateNightscoutSecret,
-                    label = { Text("API secret / token") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    visualTransformation = if (nightscoutSecretVisible) {
-                        VisualTransformation.None
-                    } else {
-                        PasswordVisualTransformation()
-                    },
-                    trailingIcon = {
-                        TextButton(onClick = { nightscoutSecretVisible = !nightscoutSecretVisible }) {
-                            Text(if (nightscoutSecretVisible) "Hide" else "Show")
-                        }
-                    },
-                )
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("Use token query auth")
-                    Switch(
-                        checked = uiState.settings.useTokenAuth,
-                        onCheckedChange = viewModel::updateUseTokenAuth,
+        RelayCard {
+            RelaySectionLabel("Glooko")
+            OutlinedTextField(
+                value = uiState.settings.glookoEmail,
+                onValueChange = viewModel::updateGlookoEmail,
+                label = { Text("Glooko email") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = fieldShape,
+                colors = fieldColors,
+            )
+            OutlinedTextField(
+                value = uiState.settings.glookoPassword,
+                onValueChange = viewModel::updateGlookoPassword,
+                label = { Text("Glooko password") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                visualTransformation = if (glookoPasswordVisible) {
+                    VisualTransformation.None
+                } else {
+                    PasswordVisualTransformation()
+                },
+                trailingIcon = {
+                    RelayTextButton(
+                        text = if (glookoPasswordVisible) "Hide" else "Show",
+                        onClick = { glookoPasswordVisible = !glookoPasswordVisible },
                     )
-                }
+                },
+                shape = fieldShape,
+                colors = fieldColors,
+            )
+        }
+
+        RelayCard {
+            RelaySectionLabel("Gluroo Global Connect")
+            OutlinedTextField(
+                value = uiState.settings.nightscoutUrl,
+                onValueChange = viewModel::updateNightscoutUrl,
+                label = { Text("Nightscout URL") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                shape = fieldShape,
+                colors = fieldColors,
+            )
+            OutlinedTextField(
+                value = uiState.settings.nightscoutSecret,
+                onValueChange = viewModel::updateNightscoutSecret,
+                label = { Text("API secret / token") },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                visualTransformation = if (nightscoutSecretVisible) {
+                    VisualTransformation.None
+                } else {
+                    PasswordVisualTransformation()
+                },
+                trailingIcon = {
+                    RelayTextButton(
+                        text = if (nightscoutSecretVisible) "Hide" else "Show",
+                        onClick = { nightscoutSecretVisible = !nightscoutSecretVisible },
+                    )
+                },
+                shape = fieldShape,
+                colors = fieldColors,
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Use token query auth", style = MaterialTheme.typography.bodyMedium)
+                Switch(
+                    checked = uiState.settings.useTokenAuth,
+                    onCheckedChange = viewModel::updateUseTokenAuth,
+                    colors = switchColors,
+                )
             }
         }
 
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Sync settings", style = MaterialTheme.typography.titleMedium)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
+        RelayCard {
+            RelaySectionLabel("Automatic relay")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = if (uiState.cloudEnabled) {
+                        "Enable AWS scheduled relay"
+                    } else {
+                        "Enable automatic relay"
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                Switch(
+                    checked = uiState.settings.syncEnabled,
+                    onCheckedChange = viewModel::updateSyncEnabled,
+                    colors = switchColors,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Post pump mode notes", style = MaterialTheme.typography.bodyMedium)
+                Switch(
+                    checked = uiState.settings.postPumpModeNotes,
+                    onCheckedChange = viewModel::updatePostPumpModeNotes,
+                    colors = switchColors,
+                )
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Jitter insulin timestamps (test)", style = MaterialTheme.typography.bodyMedium)
                     Text(
-                        if (uiState.cloudEnabled) {
-                            "Enable AWS scheduled sync"
-                        } else {
-                            "Enable background sync"
-                        },
-                    )
-                    Switch(
-                        checked = uiState.settings.syncEnabled,
-                        onCheckedChange = viewModel::updateSyncEnabled,
+                        text = "Adds random microsecond jitter to bolus created_at. For Gluroo dedup testing.",
+                        style = MaterialTheme.typography.bodySmall,
                     )
                 }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text("Post pump mode notes")
-                    Switch(
-                        checked = uiState.settings.postPumpModeNotes,
-                        onCheckedChange = viewModel::updatePostPumpModeNotes,
-                    )
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Jitter insulin timestamps (test)")
-                        Text(
-                            text = "Adds random microsecond jitter to bolus created_at. For Gluroo dedup testing.",
-                            style = MaterialTheme.typography.bodySmall,
-                        )
-                    }
-                    Switch(
-                        checked = uiState.settings.jitterInsulinTimestamps,
-                        onCheckedChange = viewModel::updateJitterInsulinTimestamps,
-                    )
-                }
-                OutlinedTextField(
-                    value = uiState.backfillDaysText,
-                    onValueChange = viewModel::updateBackfillDays,
-                    label = { Text("Backfill days (when never synced)") },
-                    supportingText = {
-                        Text("Whole number from 1 to 30. Used after reset last sync, or before the first successful sync.")
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    isError = uiState.backfillDaysText.isNotEmpty() &&
-                        uiState.backfillDaysText.toIntOrNull()?.let { it !in 1..30 } != false,
+                Switch(
+                    checked = uiState.settings.jitterInsulinTimestamps,
+                    onCheckedChange = viewModel::updateJitterInsulinTimestamps,
+                    colors = switchColors,
                 )
-                OutlinedTextField(
-                    value = uiState.settings.syncFromOverride,
-                    onValueChange = viewModel::updateSyncFromOverride,
-                    label = { Text("Sync from (optional)") },
-                    placeholder = { Text("yyyy-MM-dd HH:mm") },
-                    supportingText = {
-                        Text(
-                            "Local time. Overrides last-sync window until cleared. Save settings, then Test/Sync.",
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    isError = uiState.settings.syncFromOverride.isNotBlank() &&
-                        SyncWindowResolver.parseCustomStart(uiState.settings.syncFromOverride) == null,
-                )
-                OutlinedTextField(
-                    value = uiState.syncIntervalMinutesText,
-                    onValueChange = viewModel::updateSyncIntervalMinutes,
-                    label = { Text("Sync interval (minutes, min 1)") },
-                    supportingText = {
-                        Text("Whole number from 1 to 240 minutes.")
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    isError = uiState.syncIntervalMinutesText.isNotEmpty() &&
-                        uiState.syncIntervalMinutesText.toIntOrNull()?.let { it !in 1..240 } != false,
-                )
-                if (uiState.settings.syncEnabled) {
-                    NextSyncCountdown(nextSyncAtMs = uiState.syncState.nextScheduledSyncEpochMs)
-                }
+            }
+            OutlinedTextField(
+                value = uiState.backfillDaysText,
+                onValueChange = viewModel::updateBackfillDays,
+                label = { Text("Backfill days (when never synced)") },
+                supportingText = {
+                    Text("Whole number from 1 to 30. Used after reset last sync, or before the first successful relay.")
+                },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                isError = uiState.backfillDaysText.isNotEmpty() &&
+                    uiState.backfillDaysText.toIntOrNull()?.let { it !in 1..30 } != false,
+                shape = fieldShape,
+                colors = fieldColors,
+            )
+            OutlinedTextField(
+                value = uiState.settings.syncFromOverride,
+                onValueChange = viewModel::updateSyncFromOverride,
+                label = { Text("Relay from (optional)") },
+                placeholder = { Text("yyyy-MM-dd HH:mm") },
+                supportingText = {
+                    Text("Local time. Overrides last-sync window until cleared. Save settings, then Test connection / Relay now.")
+                },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                isError = uiState.settings.syncFromOverride.isNotBlank() &&
+                    SyncWindowResolver.parseCustomStart(uiState.settings.syncFromOverride) == null,
+                shape = fieldShape,
+                colors = fieldColors,
+            )
+            OutlinedTextField(
+                value = uiState.syncIntervalMinutesText,
+                onValueChange = viewModel::updateSyncIntervalMinutes,
+                label = { Text("Relay interval (minutes, min 1)") },
+                supportingText = {
+                    Text("Whole number from 1 to 240 minutes.")
+                },
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                isError = uiState.syncIntervalMinutesText.isNotEmpty() &&
+                    uiState.syncIntervalMinutesText.toIntOrNull()?.let { it !in 1..240 } != false,
+                shape = fieldShape,
+                colors = fieldColors,
+            )
+            if (uiState.settings.syncEnabled) {
+                NextSyncCountdown(nextSyncAtMs = uiState.syncState.nextScheduledSyncEpochMs)
             }
         }
 
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = viewModel::saveSettings) {
-                Text("Save")
-            }
-            Button(onClick = viewModel::testConnections) {
-                Text("Test")
-            }
-            Button(onClick = viewModel::syncNow) {
-                Text("Sync now")
-            }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(RelayTokens.Space2),
+        ) {
+            RelayPrimaryButton(text = "Save", onClick = viewModel::saveSettings)
+            RelaySecondaryButton(text = "Test connection", onClick = viewModel::testConnections)
+            RelayPrimaryButton(text = "Relay now", onClick = viewModel::syncNow)
         }
 
         if (uiState.isBusy) {
-            Text("Working...")
+            RelayBanner(message = "Working…", tone = RelayBannerTone.Info)
         }
 
         uiState.message?.let { message ->
-            Text(message, color = MaterialTheme.colorScheme.primary)
+            RelayBanner(message = message, tone = RelayBannerTone.Success)
         }
 
         uiState.error?.let { error ->
-            Text(error, color = MaterialTheme.colorScheme.error)
+            RelayBanner(message = error, tone = RelayBannerTone.Error)
         }
 
         uiState.diagnostics?.takeIf { it.isNotBlank() }?.let { diagnostics ->
             CollapsibleDiagnosticsCard(
-                title = "Diagnostics",
+                title = "View technical details",
                 contentKey = diagnostics,
-                containerColor = MaterialTheme.colorScheme.surfaceVariant,
             ) {
                 Text(
                     text = diagnostics,
@@ -276,18 +297,17 @@ fun SettingsTab(uiState: MainUiState, viewModel: MainViewModel) {
             val previewTitle = if (uiState.syncPreviewDryRun) {
                 "Upload preview (dry run)"
             } else {
-                "Sync upload"
+                "Relay upload"
             }
             CollapsibleDiagnosticsCard(
                 title = previewTitle,
                 contentKey = preview,
-                containerColor = MaterialTheme.colorScheme.secondaryContainer,
             ) {
                 Text(
                     text = if (uiState.syncPreviewDryRun) {
                         "These treatments would be POSTed to Nightscout but were not sent."
                     } else {
-                        "Treatments fetched from Glooko for this sync window."
+                        "Events fetched from Glooko for this relay window."
                     },
                     style = MaterialTheme.typography.bodySmall,
                 )
@@ -307,7 +327,10 @@ fun SettingsTab(uiState: MainUiState, viewModel: MainViewModel) {
                     style = MaterialTheme.typography.bodySmall,
                 )
                 if (preview.treatmentsToUpload.isEmpty()) {
-                    Text("Nothing new to upload.", style = MaterialTheme.typography.bodyMedium)
+                    Text(
+                        "No new events were found.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
                 } else {
                     preview.treatmentsToUpload.forEachIndexed { index, treatment ->
                         Text(
@@ -323,7 +346,7 @@ fun SettingsTab(uiState: MainUiState, viewModel: MainViewModel) {
                             fontFamily = FontFamily.Monospace,
                         )
                     }
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(RelayTokens.Space1))
                     Text("JSON payload:", style = MaterialTheme.typography.labelMedium)
                     Text(
                         text = preview.jsonPayload,
@@ -334,42 +357,86 @@ fun SettingsTab(uiState: MainUiState, viewModel: MainViewModel) {
             }
         }
 
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("Status", style = MaterialTheme.typography.titleMedium)
-                Text("Last sync: ${formatEpoch(uiState.syncState.lastSuccessfulSyncEpochMs)}")
-                if (uiState.syncState.lastSuccessfulSyncEpochMs > 0L) {
-                    Text(
-                        text = "Incremental window starts 2h before last sync unless Sync from is set.",
-                        style = MaterialTheme.typography.bodySmall,
-                    )
-                }
-                Text("Last boluses uploaded: ${uiState.syncState.lastBolusesUploaded}")
-                uiState.syncState.lastError?.let { Text("Last error: $it") }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton(onClick = viewModel::resetLastSync) {
-                        Text("Reset last sync")
-                    }
-                    TextButton(onClick = viewModel::clearUploadHistory) {
-                        Text("Clear upload history")
-                    }
-                }
-                uiState.connectionTest?.let { test ->
-                    Text("Glooko test: ${if (test.glookoOk) "OK" else test.glookoError ?: "Failed"}")
-                    Text("Nightscout test: ${if (test.nightscoutOk) "OK" else test.nightscoutError ?: "Failed"}")
-                }
-                uiState.pumpStatistics?.let { pump ->
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("Pump mode: ${pump.mode?.name?.lowercase() ?: "unknown"}")
-                    Text(
-                        "Auto ${pump.autoPercentage.toInt()}% | " +
-                            "Manual ${pump.manualPercentage.toInt()}% | " +
-                            "Limited ${pump.limitedPercentage.toInt()}%",
-                    )
-                }
-                uiState.devices.forEach { device ->
-                    Text("${device.name} — last sync: ${device.lastSync?.let { formatInstant(it) } ?: "unknown"}")
-                }
+        RelayCard {
+            RelaySectionLabel("Connection status")
+            val glookoOk = uiState.connectionTest?.glookoOk
+            val nightscoutOk = uiState.connectionTest?.nightscoutOk
+            RelayRoute(
+                sourceState = when (glookoOk) {
+                    true -> RelayRouteSegmentState.Healthy
+                    false -> RelayRouteSegmentState.Interrupted
+                    null -> RelayRouteSegmentState.Idle
+                },
+                relayState = when {
+                    glookoOk == true && nightscoutOk == true -> RelayRouteSegmentState.Healthy
+                    glookoOk == false || nightscoutOk == false -> RelayRouteSegmentState.Interrupted
+                    else -> RelayRouteSegmentState.Idle
+                },
+                destinationState = when (nightscoutOk) {
+                    true -> RelayRouteSegmentState.Healthy
+                    false -> RelayRouteSegmentState.Interrupted
+                    null -> RelayRouteSegmentState.Idle
+                },
+            )
+            Text(
+                "Last successful relay: ${formatEpoch(uiState.syncState.lastSuccessfulSyncEpochMs)}",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            if (uiState.syncState.lastSuccessfulSyncEpochMs > 0L) {
+                Text(
+                    text = "Incremental window starts 2h before last relay unless Relay from is set.",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Text(
+                "Last events uploaded: ${uiState.syncState.lastBolusesUploaded}",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            uiState.syncState.lastError?.let {
+                RelayBanner(message = it, tone = RelayBannerTone.Error)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(RelayTokens.Space2)) {
+                RelayTextButton(text = "Reset last sync", onClick = viewModel::resetLastSync)
+                RelayTextButton(text = "Clear upload history", onClick = viewModel::clearUploadHistory)
+            }
+            uiState.connectionTest?.let { test ->
+                Text(
+                    "Glooko: ${if (test.glookoOk) "Connected" else test.glookoError ?: "Needs attention"}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (test.glookoOk) {
+                        MaterialTheme.relayColors.success
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
+                )
+                Text(
+                    "Gluroo: ${if (test.nightscoutOk) "Connected" else test.nightscoutError ?: "Needs attention"}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (test.nightscoutOk) {
+                        MaterialTheme.relayColors.success
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
+                )
+            }
+            uiState.pumpStatistics?.let { pump ->
+                Spacer(modifier = Modifier.height(RelayTokens.Space1))
+                Text(
+                    "Pump mode: ${pump.mode?.name?.lowercase() ?: "unknown"}",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    "Auto ${pump.autoPercentage.toInt()}% | " +
+                        "Manual ${pump.manualPercentage.toInt()}% | " +
+                        "Limited ${pump.limitedPercentage.toInt()}%",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            uiState.devices.forEach { device ->
+                Text(
+                    "${device.name} — last sync: ${device.lastSync?.let { formatInstant(it) } ?: "unknown"}",
+                    style = MaterialTheme.typography.bodySmall,
+                )
             }
         }
     }
@@ -379,37 +446,31 @@ fun SettingsTab(uiState: MainUiState, viewModel: MainViewModel) {
 fun CollapsibleDiagnosticsCard(
     title: String,
     contentKey: Any?,
-    containerColor: Color,
     content: @Composable () -> Unit,
 ) {
     var expanded by remember(contentKey) { mutableStateOf(false) }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = containerColor),
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { expanded = !expanded },
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+    RelayCard {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded },
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = if (expanded) "Hide" else "Show",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.secondary,
+            )
+        }
+        AnimatedVisibility(visible = expanded) {
+            Column(
+                modifier = Modifier.padding(top = RelayTokens.Space2),
+                verticalArrangement = Arrangement.spacedBy(RelayTokens.Space2),
             ) {
-                Text(title, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    text = if (expanded) "Hide" else "Show",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                )
-            }
-            AnimatedVisibility(visible = expanded) {
-                Column(
-                    modifier = Modifier.padding(top = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    content()
-                }
+                content()
             }
         }
     }
@@ -427,21 +488,21 @@ fun NextSyncCountdown(nextSyncAtMs: Long) {
     Text(
         text = formatNextSyncCountdown(nextSyncAtMs, nowMs),
         style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        color = MaterialTheme.relayColors.textMuted,
     )
 }
 
 private fun formatNextSyncCountdown(nextSyncAtMs: Long, nowMs: Long): String {
-    if (nextSyncAtMs <= 0L) return "Next sync: not scheduled (save settings)"
+    if (nextSyncAtMs <= 0L) return "Next relay: not scheduled (save settings)"
     val remainingMs = nextSyncAtMs - nowMs
-    if (remainingMs <= 0L) return "Next sync: due now"
+    if (remainingMs <= 0L) return "Next relay: due now"
     val totalSeconds = remainingMs / 1000
     val hours = totalSeconds / 3600
     val minutes = (totalSeconds % 3600) / 60
     val seconds = totalSeconds % 60
     return when {
-        hours > 0 -> "Next sync in ${hours}h ${minutes}m ${seconds}s"
-        minutes > 0 -> "Next sync in ${minutes}m ${seconds}s"
-        else -> "Next sync in ${seconds}s"
+        hours > 0 -> "Next relay in ${hours}h ${minutes}m ${seconds}s"
+        minutes > 0 -> "Next relay in ${minutes}m ${seconds}s"
+        else -> "Next relay in ${seconds}s"
     }
 }

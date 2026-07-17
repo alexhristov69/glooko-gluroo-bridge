@@ -1,4 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#1565C0</color>
+    <color name="ic_launcher_background">#051025</color>
+    <color name="relay_primary">#0B7C78</color>
+    <color name="relay_info">#3267D6</color>
+    <color name="relay_success">#247A52</color>
+    <color name="relay_warning">#B56912</color>
+    <color name="relay_error">#B53B44</color>
+    <color name="relay_canvas">#F5F8F7</color>
+    <color name="relay_ink">#10202A</color>
+    <color name="relay_border">#D7E0DE</color>
 </resources>

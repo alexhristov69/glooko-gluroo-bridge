@@ -4,13 +4,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -19,7 +17,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
-import androidx.compose.ui.unit.dp
 
 @Composable
 fun AuthScreen(
@@ -36,16 +33,24 @@ fun AuthScreen(
     var showConfirm by remember { mutableStateOf(false) }
     var passwordVisible by remember { mutableStateOf(false) }
 
-    Card(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Text("Cloud account", style = MaterialTheme.typography.titleMedium)
-            Text(
-                text = "Sign in to sync via AWS. Scheduled sync runs in the cloud even when this phone is off.",
-                style = MaterialTheme.typography.bodyMedium,
-            )
+    val fieldColors = OutlinedTextFieldDefaults.colors(
+        focusedBorderColor = MaterialTheme.colorScheme.primary,
+        unfocusedBorderColor = MaterialTheme.relayColors.borderSubtle,
+        cursorColor = MaterialTheme.colorScheme.primary,
+    )
+    val fieldShape = RoundedCornerShape(RelayTokens.RadiusField)
+
+    Column(verticalArrangement = Arrangement.spacedBy(RelayTokens.Space3)) {
+        RelayRoute()
+        Text(
+            text = "Sign in to keep automatic relay running in the cloud, even when this phone is off.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.relayColors.textMuted,
+        )
+        RelaySafetyNote()
+
+        RelayCard {
+            RelaySectionLabel("Cloud account")
             OutlinedTextField(
                 value = email,
                 onValueChange = { email = it },
@@ -53,6 +58,8 @@ fun AuthScreen(
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
                 enabled = !isBusy,
+                shape = fieldShape,
+                colors = fieldColors,
             )
             OutlinedTextField(
                 value = password,
@@ -67,10 +74,13 @@ fun AuthScreen(
                     PasswordVisualTransformation()
                 },
                 trailingIcon = {
-                    TextButton(onClick = { passwordVisible = !passwordVisible }) {
-                        Text(if (passwordVisible) "Hide" else "Show")
-                    }
+                    RelayTextButton(
+                        text = if (passwordVisible) "Hide" else "Show",
+                        onClick = { passwordVisible = !passwordVisible },
+                    )
                 },
+                shape = fieldShape,
+                colors = fieldColors,
             )
             if (showConfirm) {
                 OutlinedTextField(
@@ -80,36 +90,39 @@ fun AuthScreen(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     enabled = !isBusy,
+                    shape = fieldShape,
+                    colors = fieldColors,
                 )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
+            Row(horizontalArrangement = Arrangement.spacedBy(RelayTokens.Space2)) {
+                RelayPrimaryButton(
+                    text = "Sign in",
                     onClick = { onSignIn(email, password) },
                     enabled = !isBusy && email.isNotBlank() && password.isNotBlank(),
-                ) {
-                    Text("Sign in")
-                }
-                Button(
+                )
+                RelaySecondaryButton(
+                    text = "Sign up",
                     onClick = {
                         showConfirm = false
                         onSignUp(email, password)
                         showConfirm = true
                     },
                     enabled = !isBusy && email.isNotBlank() && password.isNotBlank(),
-                ) {
-                    Text("Sign up")
-                }
+                )
                 if (showConfirm) {
-                    Button(
+                    RelayPrimaryButton(
+                        text = "Confirm",
                         onClick = { onConfirm(email, code) },
                         enabled = !isBusy && code.isNotBlank(),
-                    ) {
-                        Text("Confirm")
-                    }
+                    )
                 }
             }
-            message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            message?.let {
+                RelayBanner(message = it, tone = RelayBannerTone.Success)
+            }
+            error?.let {
+                RelayBanner(message = it, tone = RelayBannerTone.Error)
+            }
         }
     }
 }
